@@ -1,35 +1,45 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import React from 'react';
+import { Layout, Menu } from 'antd';
+import { DashboardOutlined, SettingOutlined } from '@ant-design/icons';
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import Dashboard from './pages/Dashboard';
+import Settings from './pages/Settings';
+import './App.css';
 
-function App() {
-  const [count, setCount] = useState(0)
+const { Header, Sider, Content } = Layout;
 
-  return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
-}
+const App: React.FC = () => {
+    const navigate = useNavigate();
+    const { pathname } = useLocation();
 
-export default App
+    const items = [
+        { key: '/', icon: <DashboardOutlined />, label: 'Tableau de bord' },
+        { key: '/settings', icon: <SettingOutlined />, label: 'Paramètres' }
+    ];
+
+    return (
+        <Layout style={{ minHeight: '100vh', width: '100%', margin: 0, padding: 0 }}>
+            <Sider collapsible>
+                <div style={{ height: 32, margin: 16, background: 'rgba(255,255,255,0.2)' }} />
+                <Menu
+                    theme="dark"
+                    mode="inline"
+                    selectedKeys={[pathname]}
+                    items={items}
+                    onClick={({ key }) => navigate(key)}
+                />
+            </Sider>
+            <Layout>
+                <Header style={{ background: '#fff', padding: 0 }} />
+                <Content style={{ padding: '16px' }}>
+                    <Routes>
+                        <Route path="/" element={<Dashboard />} />
+                        <Route path="/settings" element={<Settings />} />
+                    </Routes>
+                </Content>
+            </Layout>
+        </Layout>
+    );
+};
+
+export default App;
