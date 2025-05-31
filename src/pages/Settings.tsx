@@ -1,35 +1,63 @@
-import React from 'react';
-import { Card, Form, Input, Button } from 'antd';
-
-interface SettingsFormValues {
-    appName: string;
-}
+// pages/Settings.tsx
+import React, { useState } from 'react';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { Tabs } from 'antd';
+import { 
+    UserOutlined, 
+    LockOutlined, 
+    ApiOutlined, 
+    CloudOutlined,
+    IdcardOutlined,
+    UploadOutlined
+} from '@ant-design/icons';
 
 const Settings: React.FC = () => {
-    const [form] = Form.useForm<SettingsFormValues>();
+    const navigate = useNavigate();
+    const location = useLocation();
+    const currentTab = location.pathname.split('/').pop() || 'profile';
 
-    const onFinish = (values: SettingsFormValues) => {
-        console.log('Paramètres enregistrés :', values);
+    // Catégories de paramètres statiques
+    const categories = [
+        { key: 'profile', label: 'Profil', icon: <UserOutlined />, isEnabled: true },
+        { key: 'security', label: 'Sécurité', icon: <LockOutlined />, isEnabled: true },
+        { key: 'api', label: 'API', icon: <ApiOutlined />, isEnabled: true },
+        { key: 'ldap', label: 'LDAP', icon: <CloudOutlined />, isEnabled: true },
+        { key: 'user-attributes', label: 'Attributs Utilisateur', icon: <IdcardOutlined />, isEnabled: true },
+        { key: 'imports', label: 'Imports', icon: <UploadOutlined />, isEnabled: true },
+    ];
+
+    const handleTabChange = (key: string) => {
+        navigate(`/settings/${key}`);
     };
 
+    // Générer les items pour les onglets
+    const items = categories
+        .filter(category => category.isEnabled)
+        .map(category => ({
+            key: category.key,
+            label: (
+                <span>
+                    {category.icon}
+                    {' '}
+                    {category.label}
+                </span>
+            ),
+            disabled: !category.isEnabled
+        }));
+
     return (
-        <Card title="Paramètres de l'application">
-            <Form<SettingsFormValues>
-                form={form}
-                layout="vertical"
-                onFinish={onFinish}
-                initialValues={{ appName: 'Mon App' }}
-            >
-                <Form.Item name="appName" label="Nom de l'application">
-                    <Input />
-                </Form.Item>
-                <Form.Item>
-                    <Button type="primary" htmlType="submit">
-                        Enregistrer
-                    </Button>
-                </Form.Item>
-            </Form>
-        </Card>
+        <div>
+            <h2>Paramètres</h2>
+            
+            <Tabs
+                activeKey={currentTab}
+                items={items}
+                onChange={handleTabChange}
+            />
+            <div style={{ marginTop: 16 }}>
+                <Outlet />
+            </div>
+        </div>
     );
 };
 
