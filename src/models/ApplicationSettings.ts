@@ -72,6 +72,7 @@ export interface ImportConfig {
     isEnabled: boolean;
     createdAt: string;
     updatedAt: string;
+    groupPrefix?: string;
 }
 
 /**
