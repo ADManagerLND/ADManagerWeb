@@ -1,194 +1,251 @@
 // src/pages/ApiSettings.tsx
-import React, { useEffect } from 'react';
-import { Card, Form, Input, InputNumber, Switch, Button, message, Spin, Alert } from 'antd';
-import { ApiSettings } from '../models/ApplicationSettings';
-import { useSettings } from '../hooks/useSettings';
-import { ReloadOutlined } from '@ant-design/icons';
+import React, {useEffect, useState} from 'react';
+import {
+    Alert,
+    Button,
+    Card,
+    Col,
+    Form,
+    Input,
+    message,
+    Row,
+    Space,
+    Tag,
+    Typography
+} from 'antd';
+import apiConfigurationService from '../services/apiConfiguration';
+import {
+    ApiOutlined,
+    CheckCircleOutlined,
+    ReloadOutlined,
+    SettingOutlined,
+    UndoOutlined,
+    WifiOutlined
+} from '@ant-design/icons';
+
+const {Text} = Typography;
 
 const ApiSettingsPage: React.FC = () => {
-    const [form] = Form.useForm<ApiSettings>();
-    
-    // Utiliser notre nouveau hook useSettings
-    const { 
-        settings, 
-        updateSettings,
-        resetSettings,
-        loading, 
-        error,
-        reload 
-    } = useSettings<ApiSettings>('api');
+    const [apiConfigForm] = Form.useForm();
+    const [isTestingConnection, setIsTestingConnection] = useState(false);
+    const [connectionStatus, setConnectionStatus] = useState<'none' | 'testing' | 'success' | 'error'>('none');
+    const [currentApiUrl, setCurrentApiUrl] = useState<string | null>(null);
 
-    // Mettre à jour le formulaire quand les données sont chargées
+    // Charger la configuration API actuelle
     useEffect(() => {
-        if (settings) {
-            form.setFieldsValue(settings);
+        const currentUrl = apiConfigurationService.getBaseUrl();
+        setCurrentApiUrl(currentUrl);
+        if (currentUrl) {
+            // Extraire l'host et le port de l'URL
+            try {
+                const url = new URL(currentUrl);
+                const host = url.hostname;
+                const port = url.port || '5021';
+                apiConfigForm.setFieldsValue({ host, port });
+            } catch (error) {
+                console.error('Erreur lors du parsing de l\'URL API:', error);
+            }
         }
-    }, [settings, form]);
+    }, [apiConfigForm]);
 
-    const onFinish = async (values: ApiSettings) => {
+    // Tester et configurer l'API
+    const handleConfigureApi = async (values: { host: string; port?: string }) => {
+        setIsTestingConnection(true);
+        setConnectionStatus('testing');
+
         try {
-            const success = await updateSettings(values);
+            const success = await apiConfigurationService.configureApi(values.host, values.port);
+            
             if (success) {
-                message.success('Paramètres API mis à jour avec succès');
+                setConnectionStatus('success');
+                const newUrl = apiConfigurationService.getBaseUrl();
+                setCurrentApiUrl(newUrl);
+                message.success('Configuration API mise à jour avec succès !');
+                
+                // Demander si l'utilisateur veut recharger la page
+                setTimeout(() => {
+                    const shouldReload = window.confirm(
+                        'La configuration API a été mise à jour. Voulez-vous recharger la page pour appliquer les changements ?'
+                    );
+                    if (shouldReload) {
+                        window.location.reload();
+                    }
+                }, 1000);
             } else {
-                message.error('Erreur lors de la mise à jour des paramètres');
+                setConnectionStatus('error');
+                message.error('Impossible de se connecter à l\'API avec ces paramètres');
             }
-        } catch (err) {
-            message.error('Erreur lors de la mise à jour des paramètres');
+        } catch (error: any) {
+            setConnectionStatus('error');
+            message.error(error.message || 'Erreur lors de la configuration de l\'API');
+        } finally {
+            setIsTestingConnection(false);
         }
     };
 
-    // Gérer la réinitialisation des paramètres
-    const handleReset = async () => {
-        try {
-            const confirmed = window.confirm('Êtes-vous sûr de vouloir réinitialiser tous les paramètres API aux valeurs par défaut ?');
-            if (confirmed) {
-                const success = await resetSettings();
-                if (success) {
-                    message.success('Paramètres API réinitialisés avec succès');
-                    form.resetFields();
-                } else {
-                    message.error('Erreur lors de la réinitialisation des paramètres');
-                }
-            }
-        } catch (err) {
-            message.error('Erreur lors de la réinitialisation des paramètres');
+    // Réinitialiser la configuration API
+    const handleResetApiConfig = () => {
+        const confirmed = window.confirm(
+            'Êtes-vous sûr de vouloir réinitialiser la configuration API ? Vous devrez reconfigurer l\'adresse IP.'
+        );
+        
+        if (confirmed) {
+            apiConfigurationService.resetConfiguration();
+            setCurrentApiUrl(null);
+            apiConfigForm.resetFields();
+            message.info('Configuration API réinitialisée. Rechargement de la page...');
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
         }
     };
 
-    // Gérer le rechargement des paramètres
-    const handleReload = () => {
-        form.resetFields();
-        reload();
-        message.info('Rechargement des paramètres API...');
-    };
+
 
     return (
-        <Card 
-            title="Configuration API" 
-            extra={
-                <Button.Group>
-                    <Button 
-                        type="default" 
-                        onClick={handleReload} 
-                        disabled={loading}
-                        icon={<ReloadOutlined />}
-                    >
-                        Actualiser
-                    </Button>
-                    <Button 
-                        type="default" 
-                        onClick={handleReset} 
-                        disabled={loading}
-                        danger
-                    >
-                        Réinitialiser
-                    </Button>
-                </Button.Group>
-            }
-        >
-            {error && (
-                <Alert
-                    message="Erreur de chargement"
-                    description="Impossible de charger les paramètres API. Veuillez réessayer."
-                    type="error"
-                    showIcon
-                    style={{ marginBottom: 16 }}
-                />
-            )}
-            
-            <Spin spinning={loading}>
-                <Form 
-                    form={form} 
-                    layout="vertical" 
-                    onFinish={onFinish}
-                    disabled={loading}
+        <div>
+            {/* En-tête de la page */}
+            <Card
+                style={{
+                    borderRadius: '12px',
+                    border: '1px solid #e8e8e8',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)',
+                    marginBottom: 24
+                }}
+                bodyStyle={{padding: '20px'}}
+            >
+                <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
+                    <ApiOutlined style={{fontSize: '20px', color: '#0078d4'}}/>
+                    <div>
+                        <Text strong style={{fontSize: '16px', color: '#1f2937'}}>
+                            Configuration du Serveur API
+                        </Text>
+                        <div style={{marginTop: 4}}>
+                            <Tag color={currentApiUrl ? 'green' : 'orange'} style={{fontWeight: 500}}>
+                                {currentApiUrl ? '✅ Configuré' : '⚠️ Configuration requise'}
+                            </Tag>
+                        </div>
+                    </div>
+                </div>
+            </Card>
+
+            {/* Configuration IP de l'API */}
+            <Card
+                title={
+                    <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                        <WifiOutlined style={{color: '#0078d4'}}/>
+                        <span>Configuration du Serveur API</span>
+                    </div>
+                }
+                extra={
+                    <Space>
+                        <Tag color={currentApiUrl ? 'green' : 'orange'}>
+                            {currentApiUrl ? 'Configuré' : 'Non configuré'}
+                        </Tag>
+                        {currentApiUrl && (
+                            <Button 
+                                size="small" 
+                                danger 
+                                onClick={handleResetApiConfig}
+                                icon={<UndoOutlined/>}
+                            >
+                                Réinitialiser
+                            </Button>
+                        )}
+                    </Space>
+                }
+                style={{
+                    borderRadius: '12px',
+                    border: '1px solid #e8e8e8',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)',
+                    marginBottom: 24
+                }}
+                bodyStyle={{padding: '24px'}}
+            >
+                {currentApiUrl && (
+                    <Alert
+                        message="Serveur API configuré"
+                        description={`URL actuelle: ${currentApiUrl}`}
+                        type="success"
+                        showIcon
+                        style={{marginBottom: 16}}
+                    />
+                )}
+
+                <Form
+                    form={apiConfigForm}
+                    layout="vertical"
+                    onFinish={handleConfigureApi}
                 >
-                    <Form.Item 
-                        label="URL" 
-                        name="apiUrl" 
-                        rules={[{ required: true, message: 'Veuillez saisir l\'URL de l\'API' }]}
-                        tooltip="URL de base de l'API"
-                    >
-                        <Input placeholder="https://api.exemple.com" />
-                    </Form.Item>
-                    
-                    <Form.Item 
-                        label="Version" 
-                        name="apiVersion" 
-                        rules={[{ required: true, message: 'Veuillez saisir la version de l\'API' }]}
-                        tooltip="Version actuelle de l'API"
-                    >
-                        <Input placeholder="v1.0" />
-                    </Form.Item>
-                    
-                    <Form.Item 
-                        label="Timeout (ms)" 
-                        name="apiTimeout" 
-                        rules={[{ required: true, message: 'Veuillez saisir le timeout de l\'API' }]}
-                        tooltip="Timeout pour les requêtes API en millisecondes"
-                    >
-                        <InputNumber min={1000} max={60000} step={1000} style={{ width: '100%' }} />
-                    </Form.Item>
-                    
-                    <Form.Item 
-                        label="Limite de requêtes par minute" 
-                        name="apiRateLimit" 
-                        rules={[{ required: true, message: 'Veuillez saisir la limite de requêtes' }]}
-                        tooltip="Nombre maximal de requêtes par minute"
-                    >
-                        <InputNumber min={10} max={1000} step={10} style={{ width: '100%' }} />
-                    </Form.Item>
-                    
-                    <Form.Item 
-                        label="Journalisation API" 
-                        name="enableLogging" 
-                        valuePropName="checked"
-                        tooltip="Activer la journalisation détaillée des requêtes API"
-                    >
-                        <Switch />
-                    </Form.Item>
-                    
-                    <Form.Item 
-                        label="Langue par défaut" 
-                        name="language" 
-                        rules={[{ required: true, message: 'Veuillez sélectionner une langue' }]}
-                    >
-                        <Input placeholder="fr" />
-                    </Form.Item>
-                    
-                    <Form.Item 
-                        label="Thème" 
-                        name="theme" 
-                        rules={[{ required: true, message: 'Veuillez sélectionner un thème' }]}
-                    >
-                        <Input placeholder="light" />
-                    </Form.Item>
-                    
-                    <Form.Item 
-                        label="Éléments par page" 
-                        name="itemsPerPage" 
-                        rules={[{ required: true, message: 'Veuillez saisir le nombre d\'éléments par page' }]}
-                    >
-                        <InputNumber min={5} max={100} step={5} style={{ width: '100%' }} />
-                    </Form.Item>
-                    
-                    <Form.Item 
-                        label="Timeout de session (minutes)" 
-                        name="sessionTimeout" 
-                        rules={[{ required: true, message: 'Veuillez saisir le timeout de session' }]}
-                    >
-                        <InputNumber min={5} max={120} step={5} style={{ width: '100%' }} />
-                    </Form.Item>
-                    
-                    <Form.Item>
-                        <Button type="primary" htmlType="submit" loading={loading}>
-                            Enregistrer les modifications
-                        </Button>
-                    </Form.Item>
+                    <Row gutter={16}>
+                        <Col span={18}>
+                            <Form.Item
+                                label="Adresse IP du serveur API"
+                                name="host"
+                                rules={[
+                                    { required: true, message: 'Veuillez saisir l\'adresse IP' },
+                                    {
+                                        pattern: /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^localhost$/,
+                                        message: 'Format d\'adresse IP invalide'
+                                    }
+                                ]}
+                                tooltip="Adresse IP du serveur où l'API est hébergée"
+                            >
+                                <Input
+                                    placeholder="192.168.1.100 ou localhost"
+                                    prefix={<SettingOutlined style={{ color: '#6b7280' }} />}
+                                    size="large"
+                                />
+                            </Form.Item>
+                        </Col>
+                        <Col span={6}>
+                            <Form.Item
+                                label="Port"
+                                name="port"
+                                tooltip="Port du serveur API (par défaut: 5021)"
+                            >
+                                <Input
+                                    placeholder="5021"
+                                    type="number"
+                                    min="1"
+                                    max="65535"
+                                    size="large"
+                                />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    <Row>
+                        <Col span={24}>
+                            <Space>
+                                <Button
+                                    type="primary"
+                                    htmlType="submit"
+                                    loading={isTestingConnection}
+                                    disabled={connectionStatus === 'success'}
+                                    icon={connectionStatus === 'success' ? <CheckCircleOutlined/> : <WifiOutlined/>}
+                                >
+                                    {isTestingConnection ? 'Test en cours...' : 
+                                     connectionStatus === 'success' ? 'Connexion réussie' : 
+                                     'Tester & Configurer'}
+                                </Button>
+                                
+                                {connectionStatus === 'error' && (
+                                    <Button 
+                                        onClick={() => setConnectionStatus('none')}
+                                        icon={<ReloadOutlined/>}
+                                    >
+                                        Réessayer
+                                    </Button>
+                                )}
+                            </Space>
+                        </Col>
+                    </Row>
                 </Form>
-            </Spin>
-        </Card>
+            </Card>
+
+
+        </div>
     );
 };
 

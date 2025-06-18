@@ -1,10 +1,31 @@
-import React, { useState, useEffect } from 'react';
-import { Card, Row, Col, Statistic, Button, message, Typography, Tag } from 'antd';
+import React, { useEffect, useState } from 'react';
+import {
+    Alert,
+    Button,
+    Card,
+    Col,
+    message,
+    Row,
+    Space,
+    Statistic,
+    Tag,
+    Typography
+} from 'antd';
 import { userService } from '../services/api/userService';
 import { signalRService } from '../services/api/signalRService';
-import { UserOutlined, TeamOutlined, ClockCircleOutlined, FolderOutlined, LinkOutlined } from '@ant-design/icons';
+import { API_CONFIG } from '../services/api/config';
+import {
+    CheckCircleOutlined,
+    ClockCircleOutlined,
+    DashboardOutlined,
+    FolderOutlined,
+    LinkOutlined,
+    SyncOutlined,
+    UserOutlined,
+    WarningOutlined
+} from '@ant-design/icons';
 
-const { Title } = Typography;
+const { Title, Text, Paragraph } = Typography;
 
 interface DashboardStats {
     importedAccounts: number;
@@ -12,6 +33,9 @@ interface DashboardStats {
     averageProcessingTime: number;
     teamsCreated: number;
     teamsExpected: number;
+    lastSyncTime?: string;
+    errorCount: number;
+    successRate: number;
 }
 
 const Dashboard: React.FC = () => {
@@ -20,32 +44,35 @@ const Dashboard: React.FC = () => {
         ouGroupsCount: 0,
         averageProcessingTime: 0,
         teamsCreated: 0,
-        teamsExpected: 0
+        teamsExpected: 0,
+        lastSyncTime: undefined,
+        errorCount: 0,
+        successRate: 0
     });
     const [loading, setLoading] = useState(true);
     const [apiStatus, setApiStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
 
-    // Charger les statistiques initiales
     useEffect(() => {
         const fetchStats = async () => {
             try {
                 setLoading(true);
                 setApiStatus('checking');
 
-                // Remplacer par l'appel API réel
                 setTimeout(() => {
                     setStats({
                         importedAccounts: 1248,
                         ouGroupsCount: 75,
                         averageProcessingTime: 3.5,
                         teamsCreated: 42,
-                        teamsExpected: 50
+                        teamsExpected: 50,
+                        lastSyncTime: new Date().toISOString(),
+                        errorCount: 3,
+                        successRate: 97.2
                     });
                     setLoading(false);
                     setApiStatus('connected');
                 }, 1000);
-            } catch (error) {
-                console.error('Erreur lors du chargement des statistiques:', error);
+            } catch {
                 message.error('Impossible de charger les statistiques');
                 setLoading(false);
                 setApiStatus('disconnected');
@@ -55,119 +82,204 @@ const Dashboard: React.FC = () => {
         fetchStats();
     }, []);
 
-    // Connexion WebSocket pour les mises à jour en temps réel
     useEffect(() => {
+        if (!API_CONFIG.ENABLE_SIGNALR) return;
+
         const connectToStatsHub = async () => {
             try {
+                const res = await fetch(`${API_CONFIG.BASE_URL}/health`);
+                if (!res.ok) return;
+
                 await signalRService.startConnection('statsHub');
                 signalRService.on('statsHub', 'ReceiveStatsUpdate', (updatedStats: DashboardStats) => {
-                    console.log('Mise à jour des statistiques reçue:', updatedStats);
                     setStats(updatedStats);
                 });
-
-                console.log('Connecté au hub de statistiques');
-            } catch (error) {
-                console.error('Erreur lors de la connexion au hub de statistiques:', error);
+            } catch {
+                // silent fallback
             }
         };
 
         connectToStatsHub();
 
         return () => {
-            signalRService.stopConnection('statsHub').catch(error => {
-                console.error('Erreur lors de la déconnexion du hub de statistiques:', error);
-            });
+            if (API_CONFIG.ENABLE_SIGNALR) {
+                signalRService.stopConnection('statsHub').catch(() => {});
+            }
         };
     }, []);
 
-    // Exemple de fonction pour tester l'envoi d'une requête au serveur
-    const handleTestApiCall = async () => {
+    const handleRefreshData = async () => {
         try {
             setApiStatus('checking');
             const users = await userService.getUsers();
-            console.log('Utilisateurs récupérés:', users);
-            message.success(`${users.length} utilisateurs récupérés`);
+            message.success(`Données mises à jour (${users.length} utilisateurs)`);
             setApiStatus('connected');
-        } catch (error) {
-            console.error('Erreur lors de la récupération des utilisateurs:', error);
-            message.error('Impossible de récupérer les utilisateurs');
+        } catch {
+            message.error('Impossible de récupérer les données');
             setApiStatus('disconnected');
         }
     };
 
-    // Rendu des badges d'état de l'API
+    const formatLastSync = (dateString?: string) => {
+        if (!dateString) return 'Jamais';
+        return new Date(dateString).toLocaleString('fr-FR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    };
+
     const renderApiStatus = () => {
         switch (apiStatus) {
             case 'connected':
-                return <Tag color="success" icon={<LinkOutlined />}>API Connectée</Tag>;
+                return <Tag color="success" icon={<CheckCircleOutlined />} style={{ fontWeight: 500 }}>Connecté</Tag>;
             case 'disconnected':
-                return <Tag color="error" icon={<LinkOutlined />}>API Déconnectée</Tag>;
+                return <Tag color="error" icon={<WarningOutlined />} style={{ fontWeight: 500 }}>Déconnecté</Tag>;
             case 'checking':
-                return <Tag color="processing" icon={<LinkOutlined />}>Vérification de la connexion...</Tag>;
-            default:
-                return null;
+                return <Tag color="processing" icon={<SyncOutlined spin />} style={{ fontWeight: 500 }}>Vérification...</Tag>;
         }
     };
 
     return (
-        <div style={{ padding: 16, margin: 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-                <Title level={2}>Vue d'ensemble ADManager</Title>
-                {renderApiStatus()}
+        <div style={{ height: '100%', background: '#fafbfc' }}>
+            {/* Barre de statut et actions */}
+            <div style={{ 
+                padding: '16px 24px', 
+                background: '#fff', 
+                borderBottom: '1px solid #e8e8e8',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+            }}>
+                <Space size="middle">
+                    <Text strong>État de la connexion :</Text>
+                    {renderApiStatus()}
+                    <Text type="secondary">Dernière synchronisation : {formatLastSync(stats.lastSyncTime)}</Text>
+                </Space>
+                <Button
+                    type="primary"
+                    icon={<SyncOutlined />}
+                    onClick={handleRefreshData}
+                    loading={apiStatus === 'checking'}
+                    style={{ background: '#1e40af', borderColor: '#1e40af' }}
+                >
+                    Actualiser
+                </Button>
             </div>
-            
-            <Row gutter={[16, 16]}>
-                <Col xs={24} sm={12} lg={6}>
-                    <Card loading={loading}>
-                        <Statistic 
-                            title="Comptes importés" 
+
+
+            {/* Section des statistiques principales */}
+            <Row gutter={[24, 24]} style={{ padding: '24px 24px 0' }}>
+                <Col xs={24} sm={12} xl={6}>
+                    <Card loading={loading} style={cardStyle}>
+                        <Statistic
+                            title={<Text style={statTitleStyle}>Comptes importés</Text>}
                             value={stats.importedAccounts}
-                            prefix={<UserOutlined />} 
+                            prefix={<UserOutlined style={{ color: '#0078d4' }} />}
+                            valueStyle={statValueStyle}
                         />
                     </Card>
                 </Col>
-                <Col xs={24} sm={12} lg={6}>
-                    <Card loading={loading}>
-                        <Statistic 
-                            title="OUs / Groupes" 
-                            value={stats.ouGroupsCount} 
-                            prefix={<FolderOutlined />}
+                <Col xs={24} sm={12} xl={6}>
+                    <Card loading={loading} style={cardStyle}>
+                        <Statistic
+                            title={<Text style={statTitleStyle}>OUs / Groupes</Text>}
+                            value={stats.ouGroupsCount}
+                            prefix={<FolderOutlined style={{ color: '#059669' }} />}
+                            valueStyle={statValueStyle}
                         />
                     </Card>
                 </Col>
-                <Col xs={24} sm={12} lg={6}>
-                    <Card loading={loading}>
-                        <Statistic 
-                            title="Durée moyenne" 
-                            value={stats.averageProcessingTime} 
-                            suffix="min/compte" 
+                <Col xs={24} sm={12} xl={6}>
+                    <Card loading={loading} style={cardStyle}>
+                        <Statistic
+                            title={<Text style={statTitleStyle}>Temps moyen</Text>}
+                            value={stats.averageProcessingTime}
+                            suffix="min/compte"
                             precision={1}
-                            prefix={<ClockCircleOutlined />}
+                            prefix={<ClockCircleOutlined style={{ color: '#dc2626' }} />}
+                            valueStyle={statValueStyle}
                         />
                     </Card>
                 </Col>
-                <Col xs={24} sm={12} lg={6}>
-                    <Card loading={loading}>
-                        <Statistic 
-                            title="Teams créées" 
-                            value={stats.teamsCreated}
-                            prefix={<TeamOutlined />}
+                <Col xs={24} sm={12} xl={6}>
+                    <Card loading={loading} style={cardStyle}>
+                        <Statistic
+                            title={<Text style={statTitleStyle}>Taux de succès</Text>}
+                            value={stats.successRate}
+                            suffix="%"
+                            precision={1}
+                            prefix={<CheckCircleOutlined style={{ color: '#059669' }} />}
+                            valueStyle={{
+                                ...statValueStyle,
+                                color:
+                                    stats.successRate >= 95
+                                        ? '#059669'
+                                        : stats.successRate >= 90
+                                            ? '#d97706'
+                                            : '#dc2626'
+                            }}
                         />
                     </Card>
                 </Col>
             </Row>
 
-            <Row style={{ marginTop: 24 }}>
-                <Col span={24}>
-                    <Card title="Actions">
-                        <Button type="primary" onClick={handleTestApiCall} loading={apiStatus === 'checking'}>
-                            Rafraîchir les données
-                        </Button>
-                    </Card>
-                </Col>
-            </Row>
+            {/* Section des actions rapides */}
+            <div style={{ padding: '0 24px 24px' }}>
+                <Row gutter={[20, 20]}>
+                    <Col xs={24} lg={8}>
+                        <Card title={actionsTitle} style={cardStyle}>
+                            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                                <Button block size="large" style={actionBtnStyle}>
+                                    <UserOutlined /> Gérer les utilisateurs
+                                </Button>
+                                <Button block size="large" style={actionBtnStyle}>
+                                    <FolderOutlined /> Configurer les OUs
+                                </Button>
+                                <Button block size="large" style={actionBtnStyle}>
+                                    <LinkOutlined /> Actions rapides
+                                </Button>
+                            </Space>
+                        </Card>
+                    </Col>
+                </Row>
+            </div>
         </div>
     );
 };
+
+const cardStyle = {
+    borderRadius: '12px',
+    border: '1px solid #e8e8e8',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+} as const;
+
+const statTitleStyle = {
+    fontSize: '14px',
+    fontWeight: 500,
+    color: '#6b7280',
+} as const;
+
+const statValueStyle = {
+    fontSize: '28px',
+    fontWeight: '700',
+    color: '#1f2937',
+} as const;
+
+const actionsTitle = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <LinkOutlined style={{ color: '#0078d4' }} />
+        <span>Actions rapides</span>
+    </div>
+);
+
+const actionBtnStyle = {
+    height: '48px',
+    borderRadius: '8px',
+    fontWeight: 500,
+    border: '1px solid #e8e8e8',
+} as const;
 
 export default Dashboard;

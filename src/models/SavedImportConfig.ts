@@ -28,13 +28,14 @@ export interface ImportConfig {
     attributeMappings?: Record<string, string>;
     defaultValues?: Record<string, string>;
     validators?: ImportValidator[];
+    groupPrefix?: string;
 }
 
 /**
  * Interface pour les validateurs d'import
  */
 export interface ImportValidator {
-    attributeName: string; 
+    attributeName: string;
     validationType: string;
     validationParams?: string;
     errorMessage?: string;
@@ -44,7 +45,7 @@ export interface ImportValidator {
  * Interface pour les DTOs de configuration d'import
  */
 export interface SavedImportConfigDto {
-    id?: string; 
+    id?: string;
     name: string;
     description?: string;
     configData?: ImportConfig;

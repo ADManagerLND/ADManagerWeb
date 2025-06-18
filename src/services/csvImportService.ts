@@ -1,24 +1,22 @@
 // src/services/csvImportService.ts
-import { signalRService } from './api/signalRService';
-import { httpService } from './api/httpService';
-import { API_CONFIG } from './api/config';
-import { 
-    ImportConfig, 
-    CsvAnalysisResult, 
-    ImportResult, 
+import {signalRService} from './api/signalRService';
+import {httpService} from './api/httpService';
+import {API_CONFIG} from './api/config';
+import {
     ActionItem,
-    ImportProgress,
-    LogEntry,
-    ActionType,
+    CsvAnalysisResult,
     ImportActionItem,
-    ImportAnalysis
+    ImportConfig,
+    ImportProgress,
+    ImportResult,
+    LogEntry
 } from '../models/CsvImport';
 import * as signalR from '@microsoft/signalr';
 
 // Constantes pour le service
 const HUB_NAME = 'csvImportHub';
 const FILE_UPLOAD_TIMEOUT = 300000; // 5 minutes en millisecondes
-const ANALYSIS_TIMEOUT = 120000; // 2 minutes en millisecondes
+const ANALYSIS_TIMEOUT = 240000; // 4 minutes en millisecondes (augmenté)
 const IMPORT_TIMEOUT = 300000; // 5 minutes en millisecondes
 
 // Objet de résumé d'import par défaut
@@ -35,9 +33,30 @@ const DEFAULT_IMPORT_SUMMARY = {
 // Résultat d'import par défaut en cas d'erreur
 const DEFAULT_ERROR_RESULT: ImportResult = {
     success: false,
-    summary: { ...DEFAULT_IMPORT_SUMMARY, errorCount: 1 },
+    summary: {...DEFAULT_IMPORT_SUMMARY, errorCount: 1},
     details: []
 };
+
+// Ajouter l'interface du service d'import CSV
+export interface CsvImportServiceInterface {
+    // Méthodes de configuration
+    setAutoReconnect(enabled: boolean): void;
+    disconnect(): Promise<void>;
+    
+    // Méthodes d'import et d'analyse
+    getImportConfigs(): Promise<ImportConfig[]>;
+    uploadAndAnalyzeCsv(file: File, configId: string): Promise<CsvAnalysisResult>;
+    uploadAndAnalyzeCsvWithConfig(file: File, config: ImportConfig): Promise<CsvAnalysisResult>;
+    executeDirectImport(csvData: any[], config: ImportConfig): Promise<ImportResult>;
+    
+    // Méthodes d'abonnement aux événements
+    subscribeToProgress(callback: (progress: ImportProgress) => void): void;
+    subscribeToLogs(callback: (log: LogEntry) => void): void;
+    
+    // Méthodes utilitaires
+    isConnected(): boolean;
+    getConnectionId(): string | null;
+}
 
 export const csvImportService = {
     _signalRService: signalRService,
@@ -45,7 +64,7 @@ export const csvImportService = {
     _progressHandlers: [] as ((progress: ImportProgress) => void)[],
     _logHandlers: [] as ((log: LogEntry) => void)[],
     _autoReconnect: true,
-    
+
     // Gestionnaires liés pour les événements SignalR globaux
     _boundReceiveProgressHandler: null as ((progress: ImportProgress) => void) | null,
     _boundReceiveLogHandler: null as ((log: LogEntry) => void) | null,
@@ -54,11 +73,28 @@ export const csvImportService = {
     _boundImportCompleteHandler: null as ((data: any) => void) | null,
 
     // S'assurer que les gestionnaires liés sont créés une seule fois
-    _ensureBoundHandlers: function() {
+    _ensureBoundHandlers: function () {
         if (!this._boundReceiveProgressHandler) {
-            this._boundReceiveProgressHandler = (progress: ImportProgress) => {
+            this._boundReceiveProgressHandler = (progress: ImportProgress | any) => {
                 console.log('[CsvImportService] Progression reçue (global handler):', progress);
-                this._progressHandlers.forEach(handler => handler(progress));
+                
+                // Convertir le format AnalysisProgress vers ImportProgress standard si nécessaire
+                let standardProgress: ImportProgress;
+                if (progress.Progress !== undefined || progress.Status !== undefined || progress.Message !== undefined) {
+                    // Format AnalysisProgress du backend
+                    standardProgress = {
+                        progress: progress.Progress || 0,
+                        status: progress.Status || 'processing',
+                        message: progress.Message || '',
+                        analysis: progress.Analysis || null,
+                        result: progress.Result || null
+                    };
+                } else {
+                    // Format ImportProgress standard
+                    standardProgress = progress as ImportProgress;
+                }
+                
+                this._progressHandlers.forEach(handler => handler(standardProgress));
             };
 
             this._boundReceiveLogHandler = (log: LogEntry) => {
@@ -102,18 +138,18 @@ export const csvImportService = {
             this._boundImportCompleteHandler = (data: any) => {
                 console.log('[CsvImportService] Événement IMPORT_COMPLETE reçu (global handler):', data);
                 const serverData = data?.Data || {};
-                
+
                 const frontendResult: ImportResult = {
                     success: serverData.success || false,
-                    summary: serverData.summary || { ...DEFAULT_IMPORT_SUMMARY },
+                    summary: serverData.summary || {...DEFAULT_IMPORT_SUMMARY},
                     details: serverData.actionResults || serverData.details || []
                 };
 
                 const progressEvent: ImportProgress = {
                     progress: 100,
                     status: 'completed',
-                    message: serverData.success 
-                        ? 'Import terminé avec succès.' 
+                    message: serverData.success
+                        ? 'Import terminé avec succès.'
                         : (serverData.summary?.errorCount > 0 ? 'Import terminé avec des erreurs.' : 'Import terminé.'),
                     result: frontendResult
                 };
@@ -123,15 +159,16 @@ export const csvImportService = {
     },
 
     // Enregistrer ou réenregistrer les gestionnaires d'événements globaux
-    _registerGlobalEventHandlers: function() {
+    _registerGlobalEventHandlers: function () {
         this._ensureBoundHandlers();
 
         const eventMappings = [
-            { event: 'ReceiveProgress', handler: this._boundReceiveProgressHandler },
-            { event: 'ReceiveLog', handler: this._boundReceiveLogHandler },
-            { event: 'ANALYSIS_COMPLETE', handler: this._boundAnalysisCompleteHandler },
-            { event: 'ANALYSIS_ERROR', handler: this._boundAnalysisErrorHandler },
-            { event: 'IMPORT_COMPLETE', handler: this._boundImportCompleteHandler }
+            {event: 'ReceiveProgress', handler: this._boundReceiveProgressHandler},
+            {event: 'ReceiveLog', handler: this._boundReceiveLogHandler},
+            {event: 'AnalysisProgress', handler: this._boundReceiveProgressHandler}, // Gestionnaire pour AnalysisProgress
+            {event: 'ANALYSIS_COMPLETE', handler: this._boundAnalysisCompleteHandler},
+            {event: 'ANALYSIS_ERROR', handler: this._boundAnalysisErrorHandler},
+            {event: 'IMPORT_COMPLETE', handler: this._boundImportCompleteHandler}
         ];
 
         for (const mapping of eventMappings) {
@@ -143,32 +180,32 @@ export const csvImportService = {
 
         console.log('[CsvImportService] Gestionnaires d\'événements SignalR globaux (ré)enregistrés.');
     },
-    
+
     // Initialisation du service
-    initialize: async function() {
+    initialize: async function () {
         try {
-            console.log('[CsvImportService] Initialisation du service avec SignalR');
+            console.log('[SpreadsheetImportService] Initialisation du service avec SignalR');
             this._ensureBoundHandlers();
-            
+
             await this._signalRService.startConnection(HUB_NAME);
             this._registerGlobalEventHandlers();
-            
-            console.log('[CsvImportService] Service d\'import CSV initialisé avec succès');
+
+            console.log('[SpreadsheetImportService] Service d\'import initialisé avec succès');
             return true;
         } catch (error) {
-            console.error('[CsvImportService] Erreur lors de l\'initialisation:', error);
+            console.error('[SpreadsheetImportService] Erreur lors de l\'initialisation:', error);
             throw error;
         }
     },
-    
+
     // Configuration de la reconnexion automatique
-    setAutoReconnect: function(value: boolean): void {
+    setAutoReconnect: function (value: boolean): void {
         this._autoReconnect = value;
         console.log(`[CsvImportService] Reconnexion automatique ${value ? 'activée' : 'désactivée'}`);
     },
-    
+
     // Déconnexion du service
-    disconnect: async function(): Promise<void> {
+    disconnect: async function (): Promise<void> {
         try {
             await this._signalRService.stopConnection(HUB_NAME);
             console.log('[CsvImportService] Déconnexion réussie');
@@ -177,42 +214,82 @@ export const csvImportService = {
             throw error;
         }
     },
-    
+
     // Gestion des abonnements aux événements de progression
-    subscribeToProgress: function(handler: (progress: ImportProgress) => void): void {
+    subscribeToProgress: function (handler: (progress: ImportProgress) => void): void {
         this._progressHandlers.push(handler);
         console.log('[CsvImportService] Nouvel abonnement aux événements de progression');
     },
-    
-    unsubscribeFromProgress: function(handler: (progress: ImportProgress) => void): void {
+
+    unsubscribeFromProgress: function (handler: (progress: ImportProgress) => void): void {
         this._progressHandlers = this._progressHandlers.filter(h => h !== handler);
         console.log('[CsvImportService] Désabonnement d\'un gestionnaire de progression');
     },
-    
+
     // Gestion des abonnements aux événements de logs
-    subscribeToLogs: function(handler: (log: LogEntry) => void): void {
+    subscribeToLogs: function (handler: (log: LogEntry) => void): void {
         this._logHandlers.push(handler);
         console.log('[CsvImportService] Nouvel abonnement aux événements de log');
     },
-    
-    unsubscribeFromLogs: function(handler: (log: LogEntry) => void): void {
+
+    unsubscribeFromLogs: function (handler: (log: LogEntry) => void): void {
         this._logHandlers = this._logHandlers.filter(h => h !== handler);
         console.log('[CsvImportService] Désabonnement d\'un gestionnaire de log');
     },
-    
+
     // Récupération des configurations d'import
-    getImportConfigs: async function(): Promise<ImportConfig[]> {
+    getImportConfigs: async function (): Promise<ImportConfig[]> {
         try {
             const response = await httpService.get(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.IMPORT}`);
-            return response.data || [];
+            return (response.data || []) as ImportConfig[];
         } catch (error) {
             console.error('[CsvImportService] Erreur lors de la récupération des configurations:', error);
+            return [];
+        }
+    },
+
+    // Sauvegarder une configuration d'import
+    saveImportConfig: async function (config: Partial<ImportConfig>): Promise<ImportConfig> {
+        try {
+            const endpoint = config.id 
+                ? `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.IMPORT}/${config.id}`
+                : `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.IMPORT}`;
+            
+            const method = config.id ? 'put' : 'post';
+            const response = await httpService[method](endpoint, config);
+            return response.data as ImportConfig;
+        } catch (error) {
+            console.error('[CsvImportService] Erreur lors de la sauvegarde de la configuration:', error);
             throw error;
         }
     },
-    
+
+    // Supprimer une configuration d'import
+    deleteImportConfig: async function (configId: string): Promise<void> {
+        try {
+            await httpService.delete(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.IMPORT}/${configId}`);
+        } catch (error) {
+            console.error('[CsvImportService] Erreur lors de la suppression de la configuration:', error);
+            throw error;
+        }
+    },
+
+    // Dupliquer une configuration d'import
+    duplicateImportConfig: async function (configId: string, newName: string): Promise<ImportConfig> {
+        try {
+            const response = await httpService.post(
+                `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.IMPORT}/${configId}/duplicate`,
+                { name: newName }
+            );
+            return response.data as ImportConfig;
+        } catch (error) {
+            console.error('[CsvImportService] Erreur lors de la duplication de la configuration:', error);
+            throw error;
+        }
+    },
+
     // Vérifier et assurer la connexion SignalR
-    _ensureSignalRConnection: async function(): Promise<signalR.HubConnection> {
+    _ensureSignalRConnection: async function (): Promise<signalR.HubConnection> {
         let connection = this._signalRService.getHubConnection(HUB_NAME);
         if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
             console.log('[CsvImportService] Connection SignalR non établie, tentative de reconnexion...');
@@ -231,122 +308,154 @@ export const csvImportService = {
         return connection;
     },
 
-    // Télécharger et analyser un fichier CSV
-    uploadAndAnalyzeCsv: async function(file: File, configId: string): Promise<CsvAnalysisResult> {
+    async uploadAndAnalyzeCsv(file: File, configId: string): Promise<CsvAnalysisResult> {
         try {
-            console.log('[CsvImportService] Début du téléchargement et de l\'analyse du CSV');
-            
-            // Assurer que la connexion SignalR est établie
-            const connection = await this._ensureSignalRConnection();
-            
-            this._connectionId = connection.connectionId;
-            console.log(`[CsvImportService] ConnectionId pour l'upload: ${this._connectionId}`);
+            // 1) Connexion SignalR ----------------------------------------------------
+            const conn = await this._ensureSignalRConnection();
+            this._connectionId = conn.connectionId;
 
-            if (!this._connectionId) {
-                const errorMsg = 'Impossible d\'obtenir l\'ID de connexion SignalR pour le téléversement.';
-                console.error(`[CsvImportService] ${errorMsg}`);
-                this._progressHandlers.forEach(h => h({progress: 0, status: 'error', message: errorMsg}));
-                throw new Error(errorMsg);
-            }
+            // 2) Authentification -----------------------------------------------------
+            const authService = (await import('./auth/authService')).default;
+            if (!authService.isAuthenticated()) throw new Error('Utilisateur non authentifié.');
 
-            this._progressHandlers.forEach(handler => handler({
-                progress: 5,
-                status: 'analyzing',
-                message: 'Préparation du téléchargement du fichier...'
-            }));
-            
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('configId', configId);
-            formData.append('connectionId', this._connectionId);
+            // 3) Préparation FormData -------------------------------------------------
+            const fd = new FormData();
+            fd.append('file', file, file.name); // ✅ nom explicite
+            fd.append('configId', configId);
+            if (this._connectionId) fd.append('connectionId', this._connectionId);
 
-            this._progressHandlers.forEach(handler => handler({
-                progress: 15,
-                status: 'analyzing',
-                message: 'Téléchargement du fichier en cours...'
+            // 4) Publication sans Content‑Type manuel --------------------------------
+            this._progressHandlers.forEach(h => h({
+                progress: 10,
+                status: 'uploading',
+                message: 'Téléversement du fichier…'
             }));
-            
-            console.log(`[CsvImportService] Démarrage de l'upload avec un timeout de ${FILE_UPLOAD_TIMEOUT}ms pour le fichier ${file.name} (${file.size} octets)`);
-            
-            await httpService.post(
-                `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.IMPORT_UPLOAD}`,
-                formData,
-                { 
-                    headers: { 'Content-Type': 'multipart/form-data' },
-                    timeout: FILE_UPLOAD_TIMEOUT
-                }
-            );
-            
-            this._progressHandlers.forEach(handler => handler({
-                progress: 30,
-                status: 'analyzing',
-                message: 'Fichier téléchargé, début de l\'analyse...'
-            }));
-            
-            console.log('[CsvImportService] Démarrage de l\'analyse via SignalR, configId:', configId);
-            await this._signalRService.invoke(HUB_NAME, 'StartAnalysis', configId);
-            
+            await httpService.post(`${API_CONFIG.BASE_URL}/api/import/upload-file`, fd, {timeout: FILE_UPLOAD_TIMEOUT});
+
+            // 5) Lancer analyse -------------------------------------------------------
+            this._progressHandlers.forEach(h => h({progress: 30, status: 'analyzing', message: 'Analyse en cours…'}));
+            await this._signalRService.send(HUB_NAME, 'StartAnalysis', configId);
+
+            // 6) Attendre résultat ----------------------------------------------------
             return this._waitForAnalysisResult();
-            
         } catch (err) {
-            const error = err as Error & { code?: string };
-            console.error('[CsvImportService] Erreur lors du téléchargement et de l\'analyse du CSV:', error);
-            
-            // Vérifier si l'erreur est un timeout
-            const isTimeoutError = error.message && (
-                error.message.includes('timeout') || 
-                error.code === 'ECONNABORTED'
-            );
-            
-            if (isTimeoutError) {
-                // Même si l'upload a expiré côté client, il est possible que le serveur l'ait reçu et continue le traitement
-                this._progressHandlers.forEach(h => h({
-                    progress: 30, 
-                    status: 'analyzing', 
-                    message: "L'upload a pris plus de temps que prévu, mais le serveur traite peut-être toujours votre fichier. Tentative de continuation..."
-                }));
-                
-                try {
-                    // Essayer d'invoquer StartAnalysis même après un timeout d'upload
-                    await this._signalRService.invoke(HUB_NAME, 'StartAnalysis', configId);
-                    
-                    this._progressHandlers.forEach(h => h({
-                        progress: 35, 
-                        status: 'analyzing', 
-                        message: "L'analyse du fichier a commencé, veuillez patienter..."
-                    }));
-                    
-                    // Attendre le résultat de l'analyse
-                    return this._waitForAnalysisResult();
-                    
-                } catch (retryError) {
-                    console.error('[CsvImportService] Échec de la tentative de reprise après timeout:', retryError);
-                }
-            }
-            
-            this._progressHandlers.forEach(h => h({progress: 0, status: 'error', message: error.message || 'Erreur inconnue'}));
-            throw error;
+            const e = err as Error & { code?: string };
+            const msg = e.message ?? 'Erreur inconnue';
+            this._progressHandlers.forEach(h => h({progress: 0, status: 'error', message: msg}));
+            throw e;
         }
     },
-    
+
+    // ✅ NOUVELLE MÉTHODE : Analyser avec une configuration complète (incluant disabledActionTypes)
+    async uploadAndAnalyzeCsvWithConfig(file: File, config: ImportConfig): Promise<CsvAnalysisResult> {
+        try {
+            // 1) Connexion SignalR
+            const conn = await this._ensureSignalRConnection();
+            this._connectionId = conn.connectionId;
+
+            // 2) Authentification
+            const authService = (await import('./auth/authService')).default;
+            if (!authService.isAuthenticated()) throw new Error('Utilisateur non authentifié.');
+
+            // 3) Préparer la configuration pour l'analyse
+            console.log('[CsvImportService] Configuration avec actions désactivées:', {
+                id: config.id,
+                name: config.name,
+                disabledActionTypes: config.disabledActionTypes || []
+            });
+
+            // 4) Upload du fichier SANS analyse automatique
+            this._progressHandlers.forEach(h => h({
+                progress: 10,
+                status: 'uploading',
+                message: 'Téléversement du fichier…'
+            }));
+            
+            // On utilise un endpoint qui upload seulement sans analyser
+            const fd = new FormData();
+            fd.append('file', file, file.name);
+            if (this._connectionId) fd.append('connectionId', this._connectionId);
+            
+            // Upload du fichier sans configuration pour éviter l'analyse automatique
+            await httpService.post(`${API_CONFIG.BASE_URL}/api/import/upload-file-only`, fd, {timeout: FILE_UPLOAD_TIMEOUT});
+
+            // 5) Lancer analyse avec la configuration complète via SignalR
+            this._progressHandlers.forEach(h => h({progress: 30, status: 'analyzing', message: 'Analyse en cours…'}));
+            
+            console.log('[CsvImportService] Envoi StartAnalysis avec:', {
+                configId: config.id || '',
+                hasConfig: !!config,
+                disabledActionTypes: config.disabledActionTypes || []
+            });
+            
+            // ✅ CORRECTION: Envoyer directement les chaînes de caractères de l'enum
+            await this._signalRService.send(HUB_NAME, 'StartAnalysis', config.id || '', null, config.disabledActionTypes || []);
+
+            // 6) Attendre résultat
+            const result = await this._waitForAnalysisResult();
+            
+            return result;
+        } catch (err) {
+            const e = err as Error & { code?: string };
+            const msg = e.message ?? 'Erreur inconnue';
+            
+            // Si l'endpoint upload-file-only n'existe pas, fallback vers l'ancienne méthode
+            if (err && typeof err === 'object' && 'response' in err) {
+                const response = (err as any).response;
+                if (response?.status === 404) {
+                    console.log('[CsvImportService] Fallback vers upload-file classique + StartAnalysis');
+                    return await this._uploadAndAnalyzeCsvWithConfigFallback(file, config);
+                }
+            }
+            
+            this._progressHandlers.forEach(h => h({progress: 0, status: 'error', message: msg}));
+            throw e;
+        }
+    },
+
+    // Méthode de fallback si le nouveau endpoint n'existe pas
+    async _uploadAndAnalyzeCsvWithConfigFallback(file: File, config: ImportConfig): Promise<CsvAnalysisResult> {
+        // 1) Upload avec une config temporaire pour éviter l'analyse automatique avec la mauvaise config
+        const fd = new FormData();
+        fd.append('file', file, file.name);
+        fd.append('configId', ''); // Pas de config = pas d'analyse automatique
+        if (this._connectionId) fd.append('connectionId', this._connectionId);
+
+        await httpService.post(`${API_CONFIG.BASE_URL}/api/import/upload-file`, fd, {timeout: FILE_UPLOAD_TIMEOUT});
+
+        // 2) Lancer analyse avec la bonne configuration via SignalR
+        this._progressHandlers.forEach(h => h({progress: 30, status: 'analyzing', message: 'Analyse en cours…'}));
+        
+        console.log('[CsvImportService] Envoi StartAnalysis avec:', {
+            configId: config.id || '',
+            hasConfig: !!config,
+            disabledActionTypes: config.disabledActionTypes || []
+        });
+        
+        await this._signalRService.send(HUB_NAME, 'StartAnalysis', config.id || '', config);
+
+        // 3) Attendre résultat
+        return await this._waitForAnalysisResult();
+    },
+
     // Attendre le résultat de l'analyse
-    _waitForAnalysisResult: function(): Promise<CsvAnalysisResult> {
+    _waitForAnalysisResult: function (): Promise<CsvAnalysisResult> {
         return new Promise<CsvAnalysisResult>((resolve, reject) => {
             const timeoutId = setTimeout(() => {
                 console.warn('[CsvImportService] L\'analyse prend trop de temps, aucune réponse du serveur');
                 this.unsubscribeFromProgress(progressHandler);
                 reject(new Error("L'analyse n'a reçu aucune réponse du serveur. Veuillez vérifier l'état du serveur ou essayer à nouveau."));
             }, ANALYSIS_TIMEOUT);
-            
+
             const progressHandler = (progressData: ImportProgress) => {
                 console.log('[CsvImportService] Progression reçue (analyse):', progressData);
-                
+
                 if (progressData.status === 'analyzed') {
                     console.log('[CsvImportService] Analyse terminée via SignalR:', progressData.analysis);
                     clearTimeout(timeoutId);
                     this.unsubscribeFromProgress(progressHandler);
-                    
-                    const analysisData = progressData.analysis;
+
+                    const analysisData = progressData.analysis ?? undefined;
                     const result: CsvAnalysisResult = {
                         success: true,
                         analysis: analysisData,
@@ -360,8 +469,7 @@ export const csvImportService = {
                         }
                     };
                     resolve(result);
-                } 
-                else if (progressData.status === 'error') {
+                } else if (progressData.status === 'error') {
                     console.error('[CsvImportService] Erreur d\'analyse via SignalR:', progressData.message);
                     clearTimeout(timeoutId);
                     this.unsubscribeFromProgress(progressHandler);
@@ -371,34 +479,58 @@ export const csvImportService = {
             this.subscribeToProgress(progressHandler);
         });
     },
-    
+
     // Exécuter l'import
-    executeImport: async function(csvData: Record<string, string>[], config: ImportConfig, actions: ActionItem[]): Promise<ImportResult> {
+    executeImport: async function (csvData: Record<string, string>[], config: ImportConfig, actions: ActionItem[]): Promise<ImportResult> {
         try {
             console.log('[CsvImportService] Début de l\'exécution de l\'import via SignalR');
-            
+            console.log('[CsvImportService] csvData length:', csvData.length);
+            console.log('[CsvImportService] config:', config);
+            console.log('[CsvImportService] actions:', actions);
+
             // Assurer que la connexion SignalR est établie
             await this._ensureSignalRConnection();
-            
-            const legacyActions = actions.map(a => ({
-                RowIndex: 0,
-                ActionType: a.actionType.toString(),
-                Data: {
-                    objectName: a.objectName,
-                    path: a.path,
-                    message: a.message
-                },
-                IsValid: a.selected === undefined ? true : a.selected,
-                ValidationErrors: []
-            }));
-            
+
+            const legacyActions = actions.map((a, index) => {
+                const actionTypeStr = typeof a.actionType === 'string' ? a.actionType : String(a.actionType);
+                console.log(`[CsvImportService] Action ${index}:`, {
+                    original: a.actionType,
+                    converted: actionTypeStr,
+                    selected: a.selected
+                });
+
+                return {
+                    RowIndex: index,
+                    ActionType: actionTypeStr,
+                    Data: {
+                        objectName: a.objectName,
+                        path: a.path,
+                        message: a.message,
+                        attributes: a.attributes
+                    },
+                    IsValid: a.selected === undefined ? true : a.selected,
+                    ValidationErrors: []
+                };
+            });
+
+            console.log('[CsvImportService] legacyActions:', legacyActions);
+
             return new Promise<ImportResult>((resolve, reject) => {
+                // Timeout de sécurité
+                const timeoutId = setTimeout(() => {
+                    console.log('[CsvImportService] Timeout de l\'import atteint');
+                    this._signalRService.offEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
+                    this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
+                    resolve({...DEFAULT_ERROR_RESULT});
+                }, IMPORT_TIMEOUT);
+
                 // Handler pour l'événement d'import terminé
                 const completeHandler = (data: any) => {
                     console.log('[CsvImportService] Import terminé via SignalR:', data);
+                    clearTimeout(timeoutId);
                     this._signalRService.offEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
                     this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
-                    
+
                     const result: ImportResult = {
                         success: true,
                         summary: {
@@ -412,113 +544,121 @@ export const csvImportService = {
                         },
                         details: data?.Data?.actionResults || []
                     };
-                    
+
                     resolve(result);
                 };
-                
+
                 // Handler pour l'événement d'erreur d'import
                 const errorHandler = (data: any) => {
                     console.error('[CsvImportService] Erreur d\'import via SignalR:', data);
+                    clearTimeout(timeoutId);
                     this._signalRService.offEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
                     this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
-                    
-                    resolve({ ...DEFAULT_ERROR_RESULT });
+
+                    resolve({...DEFAULT_ERROR_RESULT});
                 };
 
                 // S'abonner aux événements
                 this._signalRService.onEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
                 this._signalRService.onEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
-                
-                // Lancer l'import
-                this._signalRService.invoke(HUB_NAME, 'StartImport', { ConfigId: config.id, Actions: legacyActions })
-                .catch(error => {
-                    console.error('[CsvImportService] Erreur lors de l\'appel à StartImport:', error);
-                    this._signalRService.offEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
-                    this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
-                    resolve({ ...DEFAULT_ERROR_RESULT });
-                });
 
-                // Timeout de sécurité
-                const timeoutId = setTimeout(() => {
-                    this._signalRService.offEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
-                    this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
-                    resolve({ ...DEFAULT_ERROR_RESULT });
-                }, IMPORT_TIMEOUT);
+                // Préparer les données pour l'envoi
+                const importData = {
+                    ConfigId: config.id,
+                    Actions: legacyActions
+                };
+                console.log('[CsvImportService] Envoi des données d\'import:', importData);
+
+                // Lancer l'import
+                this._signalRService.send(HUB_NAME, 'StartImport', importData)
+                    .then(() => {
+                        console.log('[CsvImportService] Commande StartImport envoyée avec succès');
+                    })
+                    .catch(error => {
+                        console.error('[CsvImportService] Erreur lors de l\'appel à StartImport:', error);
+                        clearTimeout(timeoutId);
+                        this._signalRService.offEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
+                        this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
+                        resolve({...DEFAULT_ERROR_RESULT});
+                    });
             });
         } catch (error) {
             console.error('[CsvImportService] Erreur lors de l\'exécution de l\'import:', error);
-            return { ...DEFAULT_ERROR_RESULT };
+            return {...DEFAULT_ERROR_RESULT};
         }
     },
-    
+
     // S'abonner aux événements de progression avec fonction de désabonnement
-    onProgress: function(handler: (progress: ImportProgress) => void): () => void {
+    onProgress: function (handler: (progress: ImportProgress) => void): () => void {
         this._progressHandlers.push(handler);
-        
+
         // Retourner une fonction pour se désabonner
         return () => {
             this._progressHandlers = this._progressHandlers.filter(h => h !== handler);
         };
     },
-    
+
     // S'abonner aux événements de log avec fonction de désabonnement
-    onLog: function(handler: (log: LogEntry) => void): () => void {
+    onLog: function (handler: (log: LogEntry) => void): () => void {
         this._logHandlers.push(handler);
-        
+
         // Retourner une fonction pour se désabonner
         return () => {
             this._logHandlers = this._logHandlers.filter(h => h !== handler);
         };
     },
-    
+
     // Démarrer l'import
-    startImport: async function(configId: string, actions: ImportActionItem[]): Promise<ImportResult> {
+    startImport: async function (configId: string, actions: ImportActionItem[]): Promise<ImportResult> {
         try {
             console.log(`[CsvImportService] Début de l'import avec la configuration ${configId}`);
-            
-            // Obtenir l'ID de connexion
-            let connectionId = "";
-            try {
-                connectionId = await this._signalRService.invoke(HUB_NAME, 'GetConnectionId');
-            } catch (error) {
-                console.warn('[CsvImportService] Impossible d\'obtenir l\'ID de connexion via GetConnectionId, tentative alternative');
-                connectionId = Date.now().toString(); // ID temporaire comme fallback
-            }
-            
+
             return new Promise((resolve, reject) => {
+                // Timeout de sécurité
+                const timeoutId = setTimeout(() => {
+                    this._signalRService.offEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
+                    this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
+                    reject(new Error('Timeout lors de l\'import'));
+                }, IMPORT_TIMEOUT);
+
                 // Gestionnaire pour l'événement d'import complet
                 const completeHandler = (data: any) => {
                     console.log('[CsvImportService] Import complet:', data);
-                    
+
+                    clearTimeout(timeoutId);
                     this._signalRService.offEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
                     this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
-                    
+
                     resolve(data?.Data || {});
                 };
-                
+
                 // Gestionnaire pour l'événement d'erreur d'import
                 const errorHandler = (data: any) => {
                     console.error('[CsvImportService] Erreur d\'import:', data);
-                    
+
+                    clearTimeout(timeoutId);
                     this._signalRService.offEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
                     this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
-                    
+
                     reject(new Error(data?.Data?.Error || 'Erreur inconnue lors de l\'import'));
                 };
-                
+
                 // S'abonner aux événements
                 this._signalRService.onEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
                 this._signalRService.onEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
-                
-                // Démarrer l'import
-                this._signalRService.invoke(HUB_NAME, 'StartImport', {
+
+                // Démarrer l'import - FIX: Utiliser send au lieu de invoke
+                this._signalRService.send(HUB_NAME, 'StartImport', {
                     ConfigId: configId,
                     Actions: actions
                 })
-                .catch(error => {
-                    console.error('[CsvImportService] Erreur lors du démarrage de l\'import:', error);
-                    reject(error);
-                });
+                    .catch(error => {
+                        console.error('[CsvImportService] Erreur lors du démarrage de l\'import:', error);
+                        clearTimeout(timeoutId);
+                        this._signalRService.offEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
+                        this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
+                        reject(error);
+                    });
             });
         } catch (error) {
             console.error('[CsvImportService] Erreur lors de l\'import:', error);
@@ -527,30 +667,38 @@ export const csvImportService = {
     },
 
     // Exécuter et surveiller un import (méthode de transition)
-    executeAndPoll: async function(configId: string, items: ImportActionItem[], onProgress: (progress: ImportProgress) => void): Promise<ImportResult> {
-        return Promise.resolve({ 
-            success: false, 
-            summary: { ...DEFAULT_IMPORT_SUMMARY, errorCount: 1 },
+    executeAndPoll: async function (configId: string, items: ImportActionItem[], onProgress: (progress: ImportProgress) => void): Promise<ImportResult> {
+        return Promise.resolve({
+            success: false,
+            summary: {...DEFAULT_IMPORT_SUMMARY, errorCount: 1},
             details: [],
             errorMessage: "Fonction non implémentée"
-        }); 
+        });
     },
 
     // Exécuter un import direct à partir des données CSV
-    executeDirectImport: async function(csvData: Record<string, string>[], config: ImportConfig): Promise<ImportResult> {
+    executeDirectImport: async function (csvData: Record<string, string>[], config: ImportConfig): Promise<ImportResult> {
         try {
             console.log('[CsvImportService] Début de l\'exécution de l\'import direct via SignalR');
-            
+
             // Assurer que la connexion SignalR est établie
             await this._ensureSignalRConnection();
-            
+
             return new Promise<ImportResult>((resolve, reject) => {
+                // Timeout de sécurité
+                const timeoutId = setTimeout(() => {
+                    this._signalRService.offEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
+                    this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
+                    resolve({...DEFAULT_ERROR_RESULT});
+                }, IMPORT_TIMEOUT);
+
                 // Gestionnaire pour l'événement d'import terminé
                 const completeHandler = (data: any) => {
                     console.log('[CsvImportService] Import terminé via SignalR:', data);
+                    clearTimeout(timeoutId);
                     this._signalRService.offEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
                     this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
-                    
+
                     const result: ImportResult = {
                         success: true,
                         summary: {
@@ -564,42 +712,46 @@ export const csvImportService = {
                         },
                         details: data?.Data?.actionResults || []
                     };
-                    
+
                     resolve(result);
                 };
-                
+
                 // Gestionnaire pour l'événement d'erreur d'import
                 const errorHandler = (data: any) => {
                     console.error('[CsvImportService] Erreur d\'import via SignalR:', data);
+                    clearTimeout(timeoutId);
                     this._signalRService.offEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
                     this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
-                    
-                    resolve({ ...DEFAULT_ERROR_RESULT });
+
+                    resolve({...DEFAULT_ERROR_RESULT});
                 };
 
                 // S'abonner aux événements
                 this._signalRService.onEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
                 this._signalRService.onEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
-                
-                // Lancer l'import direct
-                this._signalRService.invoke(HUB_NAME, 'StartImport', { ConfigId: config.id, Actions: [] })
-                .catch(error => {
-                    console.error('[CsvImportService] Erreur lors de l\'appel à StartImport (executeDirectImport):', error);
-                    this._signalRService.offEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
-                    this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
-                    resolve({ ...DEFAULT_ERROR_RESULT });
-                });
 
-                // Timeout de sécurité
-                const timeoutId = setTimeout(() => {
-                    this._signalRService.offEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
-                    this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
-                    resolve({ ...DEFAULT_ERROR_RESULT });
-                }, IMPORT_TIMEOUT);
+                // Lancer l'import direct - FIX: Utiliser send au lieu de invoke
+                this._signalRService.send(HUB_NAME, 'StartImport', {ConfigId: config.id, Actions: []})
+                    .catch(error => {
+                        console.error('[CsvImportService] Erreur lors de l\'appel à StartImport (executeDirectImport):', error);
+                        clearTimeout(timeoutId);
+                        this._signalRService.offEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
+                        this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
+                        resolve({...DEFAULT_ERROR_RESULT});
+                    });
             });
         } catch (error) {
             console.error('[CsvImportService] Erreur lors de l\'exécution de l\'import direct:', error);
-            return { ...DEFAULT_ERROR_RESULT };
+            return {...DEFAULT_ERROR_RESULT};
         }
+    },
+
+    // Méthodes utilitaires
+    isConnected: function (): boolean {
+        return this._signalRService.isConnected(HUB_NAME);
+    },
+
+    getConnectionId: function (): string | null {
+        return this._connectionId;
     },
 };

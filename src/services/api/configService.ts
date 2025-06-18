@@ -1,91 +1,91 @@
-import { API_CONFIG } from './config';
-import { httpService } from './httpService';
-import { ApplicationSettings, ImportConfig, LdapSettings } from '../../models/ApplicationSettings';
+import {API_CONFIG} from './config';
+import {httpService} from './httpService';
+import {ApplicationSettings, ImportConfig, LdapSettings} from '../../models/ApplicationSettings';
 
 /**
  * Service pour gérer les configurations de l'application
  */
 class ConfigService {
     private readonly BASE_URL = `${API_CONFIG.BASE_URL}/api/Config`;
-    
+
     /**
      * Récupère la configuration générale
      */
     public async getConfig(): Promise<any> {
         try {
-            const { data } = await httpService.get<any>(`${this.BASE_URL}`);
+            const {data} = await httpService.get<any>(`${this.BASE_URL}`);
             return data;
         } catch (error) {
             console.error('[ConfigService] Erreur lors de la récupération de la configuration générale:', error);
             throw error;
         }
     }
-    
+
     /**
      * Met à jour la configuration générale
      */
     public async updateConfig(config: any): Promise<any> {
         try {
-            const { data } = await httpService.put<any>(`${this.BASE_URL}`, config);
+            const {data} = await httpService.put<any>(`${this.BASE_URL}`, config);
             return data;
         } catch (error) {
             console.error('[ConfigService] Erreur lors de la mise à jour de la configuration générale:', error);
             throw error;
         }
     }
-    
+
     /**
      * Récupère la configuration LDAP
      */
     public async getLdapConfig(): Promise<LdapSettings> {
         try {
-            const { data } = await httpService.get<LdapSettings>(`${this.BASE_URL}/ldap`);
+            const {data} = await httpService.get<LdapSettings>(`${this.BASE_URL}/ldap`);
             return data;
         } catch (error) {
             console.error('[ConfigService] Erreur lors de la récupération de la configuration LDAP:', error);
             throw error;
         }
     }
-    
+
     /**
      * Met à jour la configuration LDAP
      */
     public async updateLdapConfig(config: LdapSettings): Promise<LdapSettings> {
         try {
-            const { data } = await httpService.put<LdapSettings>(`${this.BASE_URL}/ldap`, config);
+            const {data} = await httpService.put<LdapSettings>(`${this.BASE_URL}/ldap`, config);
             return data;
         } catch (error) {
             console.error('[ConfigService] Erreur lors de la mise à jour de la configuration LDAP:', error);
             throw error;
         }
     }
-    
+
     /**
      * Récupère les configurations d'import
      */
     public async getImportConfigs(): Promise<ImportConfig[]> {
         try {
-            const { data } = await httpService.get<ImportConfig[]>(`${this.BASE_URL}/import`);
+            const {data} = await httpService.get<ImportConfig[]>(`${this.BASE_URL}/import`);
             return data;
         } catch (error) {
             console.error('[ConfigService] Erreur lors de la récupération des configurations d\'import:', error);
             throw error;
         }
     }
-    
+
     /**
      * Crée une nouvelle configuration d'import
      */
     public async createImportConfig(config: ImportConfig): Promise<ImportConfig> {
         try {
-            const { data } = await httpService.post<ImportConfig>(`${this.BASE_URL}/import`, config);
+            const {data} = await httpService.post<ImportConfig>(`${this.BASE_URL}/import`, config);
             return data;
         } catch (error) {
             console.error('[ConfigService] Erreur lors de la création de la configuration d\'import:', error);
             throw error;
         }
     }
-    
+
     /**
      * Supprime une configuration d'import
      */
@@ -97,59 +97,59 @@ class ConfigService {
             throw error;
         }
     }
-    
+
     /**
      * Récupère les attributs utilisateur
      */
     public async getUserAttributes(): Promise<any[]> {
         try {
-            const { data } = await httpService.get<any[]>(`${this.BASE_URL}/attributes`);
+            const {data} = await httpService.get<any[]>(`${this.BASE_URL}/attributes`);
             return data;
         } catch (error) {
             console.error('[ConfigService] Erreur lors de la récupération des attributs utilisateur:', error);
             throw error;
         }
     }
-    
+
     /**
      * Met à jour les attributs utilisateur
      */
     public async updateUserAttributes(attributes: any[]): Promise<any[]> {
         try {
-            const { data } = await httpService.put<any[]>(`${this.BASE_URL}/attributes`, attributes);
+            const {data} = await httpService.put<any[]>(`${this.BASE_URL}/attributes`, attributes);
             return data;
         } catch (error) {
             console.error('[ConfigService] Erreur lors de la mise à jour des attributs utilisateur:', error);
             throw error;
         }
     }
-    
+
     /**
      * Récupère toutes les configurations
      */
     public async getAllConfigs(): Promise<ApplicationSettings> {
         try {
-            const { data } = await httpService.get<ApplicationSettings>(`${this.BASE_URL}/all`);
+            const {data} = await httpService.get<ApplicationSettings>(`${this.BASE_URL}/all`);
             return data;
         } catch (error) {
             console.error('[ConfigService] Erreur lors de la récupération de toutes les configurations:', error);
             throw error;
         }
     }
-    
+
     /**
      * Met à jour toutes les configurations
      */
     public async updateAllConfigs(configs: ApplicationSettings): Promise<ApplicationSettings> {
         try {
-            const { data } = await httpService.put<ApplicationSettings>(`${this.BASE_URL}/all`, configs);
+            const {data} = await httpService.put<ApplicationSettings>(`${this.BASE_URL}/all`, configs);
             return data;
         } catch (error) {
             console.error('[ConfigService] Erreur lors de la mise à jour de toutes les configurations:', error);
             throw error;
         }
     }
-    
+
     /**
      * Fonction compatibilité avec useSettings hook - récupère les paramètres d'une catégorie
      */
@@ -176,7 +176,7 @@ class ConfigService {
             throw error;
         }
     }
-    
+
     /**
      * Fonction compatibilité avec useSettings hook - met à jour les paramètres d'une catégorie
      */
@@ -200,7 +200,7 @@ class ConfigService {
             throw error;
         }
     }
-    
+
     /**
      * Fonction compatibilité - réinitialisation des paramètres (non supportée, renvoie les valeurs actuelles)
      */

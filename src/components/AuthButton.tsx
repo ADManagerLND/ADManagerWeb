@@ -1,31 +1,25 @@
-import React from 'react';
-import { Button } from 'antd';
-import { useMsal } from '@azure/msal-react';
-import { loginRequest } from '../authConfig';
+import React, {useState} from 'react';
+import {Button} from 'antd';
 
 const AuthButton: React.FC = () => {
-    const { instance, accounts } = useMsal();
-
-    const handleLogin = () => {
-        instance.loginPopup(loginRequest).catch(e => {
-            console.error("Erreur de connexion:", e);
-        });
-    };
+    const [isProcessing, setIsProcessing] = useState(false);
 
     const handleLogout = () => {
-        instance.logoutPopup({
-            postLogoutRedirectUri: window.location.origin,
-        }).catch(e => {
-            console.error("Erreur de déconnexion:", e);
-        });
+        if (isProcessing) return;
+
+        setIsProcessing(true);
+
+        // Approche plus directe de déconnexion
+        window.location.href = `https://login.microsoftonline.com/common/oauth2/v2.0/logout?post_logout_redirect_uri=${encodeURIComponent(window.location.origin)}`;
     };
 
     return (
-        <Button 
-            type={accounts.length > 0 ? "default" : "primary"}
-            onClick={accounts.length > 0 ? handleLogout : handleLogin}
+        <Button
+            onClick={handleLogout}
+            loading={isProcessing}
+            disabled={isProcessing}
         >
-            {accounts.length > 0 ? "Se déconnecter" : "Se connecter"}
+            Se déconnecter
         </Button>
     );
 };

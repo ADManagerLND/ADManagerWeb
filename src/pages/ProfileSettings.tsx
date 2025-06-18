@@ -1,6 +1,6 @@
 // src/pages/ProfileSettings.tsx
 import React from 'react';
-import { Card, Form, Input, Button } from 'antd';
+import {Button, Card, Form, Input} from 'antd';
 
 const ProfileSettings: React.FC = () => {
     const [form] = Form.useForm();
@@ -15,26 +15,26 @@ const ProfileSettings: React.FC = () => {
             <Form
                 form={form}
                 layout="vertical"
-                initialValues={{ name: '', email: '' }}
+                initialValues={{name: '', email: ''}}
                 onFinish={onFinish}
             >
                 <Form.Item
                     label="Nom"
                     name="name"
-                    rules={[{ required: true, message: 'Veuillez entrer votre nom' }]}
+                    rules={[{required: true, message: 'Veuillez entrer votre nom'}]}
                 >
-                    <Input placeholder="Votre nom" />
+                    <Input placeholder="Votre nom"/>
                 </Form.Item>
 
                 <Form.Item
                     label="Adresse email"
                     name="email"
                     rules={[
-                        { required: true, message: 'Veuillez entrer votre email' },
-                        { type: 'email', message: 'Format d’email invalide' },
+                        {required: true, message: 'Veuillez entrer votre email'},
+                        {type: 'email', message: 'Format d’email invalide'},
                     ]}
                 >
-                    <Input placeholder="Votre email" />
+                    <Input placeholder="Votre email"/>
                 </Form.Item>
 
                 <Form.Item>

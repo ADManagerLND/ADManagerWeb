@@ -1,4 +1,4 @@
-import { csvImportService } from './csvImportService';
+import {csvImportService} from './csvImportService';
 
 /**
  * Utilitaire pour l'initialisation du service d'importation CSV avec SignalR
@@ -10,7 +10,7 @@ export const importSystemMigrator = {
     get currentMode(): 'signalr' {
         return 'signalr';
     },
-    
+
     /**
      * Initialise le service d'importation CSV avec SignalR
      */

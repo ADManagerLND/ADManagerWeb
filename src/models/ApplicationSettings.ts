@@ -28,6 +28,7 @@ export interface LdapSettings {
     LdapPassword: string;
     LdapSsl: boolean;
     LdapPageSize: number;
+    netBiosDomainName: string;
 }
 
 /**
@@ -87,7 +88,6 @@ export interface ApplicationSettings {
     imports: any[];
     folderManagementSettings: any;
     fsrmSettings: any;
-    netBiosDomainName: string;
 }
 
 /**

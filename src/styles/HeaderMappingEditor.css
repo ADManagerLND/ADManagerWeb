@@ -1,0 +1,35 @@
+/* Styles pour l'éditeur de mappages */
+.editable-row .ant-form-item {
+    margin: 0;
+}
+
+.editable-cell {
+    position: relative;
+}
+
+.editable-cell-value-wrap {
+    padding: 5px 12px;
+    cursor: pointer;
+}
+
+.editable-add-btn {
+    margin-bottom: 8px;
+}
+
+.header-mapping-editor .ant-table-tbody > tr.ant-table-row:hover > td {
+    background: #fafafa;
+}
+
+.header-mapping-editor .ant-select-dropdown {
+    z-index: 9999;
+}
+
+.mapping-preset-card {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+}
+
+.transformation-tag {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 12px;
+}

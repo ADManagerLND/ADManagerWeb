@@ -6,7 +6,16 @@ export enum ActionType {
     DELETE_USER = 'DELETE_USER',
     MOVE_USER = 'MOVE_USER',
     CREATE_OU = 'CREATE_OU',
+    UPDATE_OU = 'UPDATE_OU',
     DELETE_OU = 'DELETE_OU',
+    CREATE_GROUP = 'CREATE_GROUP',
+    DELETE_GROUP = 'DELETE_GROUP',
+    CREATE_STUDENT_FOLDER = 'CREATE_STUDENT_FOLDER',
+    CREATE_TEAM = 'CREATE_TEAM',
+    CREATE_CLASS_GROUP_FOLDER = 'CREATE_CLASS_GROUP_FOLDER',
+    ADD_USER_TO_GROUP = 'ADD_USER_TO_GROUP',
+    CREATE_SECURITY_GROUP = 'CREATE_SECURITY_GROUP',
+    CREATE_DISTRIBUTION_GROUP = 'CREATE_DISTRIBUTION_GROUP',
     ERROR = 'ERROR'
 }
 
@@ -20,6 +29,7 @@ export interface ImportConfig {
     createMissingOUs: boolean;
     headerMapping: Record<string, string>;
     manualColumns?: string[];
+    disabledActionTypes?: ActionType[];
 }
 
 export interface ImportAction {
@@ -54,19 +64,23 @@ export interface ImportActionItem {
 export interface ImportSummary {
     totalObjects: number;
     createCount: number;
-    createOUCount: number;
+    createOUCount?: number;
     updateCount: number;
     deleteCount: number;
     deleteOUCount?: number;
-    moveCount: number;
+    moveCount?: number;
     errorCount: number;
     processedCount?: number;
+    createStudentFolderCount?: number;
+    createClassGroupFolderCount?: number;
+    createTeamGroupCount?: number;
+    provisionUserShareCount?: number;
 }
 
 export interface ImportAnalysis {
     actions: ImportAction[];
     summary: ImportSummary;
-    csvData: Record<string, string>[];
+    csvData?: Record<string, string>[];
 }
 
 export interface CsvAnalysisResult {
@@ -103,16 +117,17 @@ export interface ImportResult {
 }
 
 export interface ImportProgress {
-    status: 'analyzing' | 'analyzed' | 'importing' | 'creating_ous' | 'processing_users' | 'completed' | 'completed_with_errors' | 'error' | 'idle';
+    status: 'initializing' | 'validating' | 'selecting-parser' | 'reading-file' | 'parsing' | 'data-loaded' | 'preparing' | 'validating-config' | 'extracting-headers' | 'preparing-result' | 'analyzing-actions' | 'processing-ous' | 'analyzing-ous' | 'ous-processed' | 'processing-users' | 'users-processed' | 'cleanup-orphans' | 'orphans-found' | 'cleanup-empty-ous' | 'filtering-actions' | 'finalizing' | 'preloading-ldap' | 'loading-users-batch' | 'users-loaded' | 'users-fallback' | 'loading-ous-batch' | 'ous-loaded' | 'ous-fallback' | 'processing-ous-optimized' | 'ous-optimized-done' | 'processing-users-optimized' | 'processing-users-progress' | 'users-processing-complete' | 'cleanup-orphans-optimized' | 'orphans-optimized-found' | 'cleanup-empty-ous-optimized' | 'filtering-actions-optimized' | 'finalizing-optimized' | 'uploading' | 'analyzing' | 'analyzed' | 'importing' | 'creating_ous' | 'processing_users' | 'completed' | 'completed_with_errors' | 'error' | 'idle';
     message: string;
     progress: number;
+    timestamp?: string;
     currentAction?: ImportAction;
-    result?: ImportResult;
-    analysis?: ImportAnalysis;
+    result?: ImportResult | null;
+    analysis?: ImportAnalysis | null;
 }
 
 export interface LogEntry {
-    timestamp: string;
-    level: 'info' | 'warning' | 'error' | 'success';
+    timestamp?: string;
+    level?: 'info' | 'warning' | 'error' | 'success';
     message: string;
 }

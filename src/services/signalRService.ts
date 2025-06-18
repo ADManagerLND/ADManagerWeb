@@ -1,201 +1,264 @@
 import * as signalR from '@microsoft/signalr';
-import { API_CONFIG } from './api/config';
-import { msalInstance, protectedResources } from '../authConfig';
+import {API_CONFIG} from './api/config';
+import authService from './auth/authService';
 
-// Type pour les callbacks d'événements
-type EventCallback = (...args: any[]) => void;
+/**
+ * Service pour gérer les connexions SignalR
+ */
+class SignalRService {
+    private connections: Map<string, signalR.HubConnection>;
 
-// Interface pour le service SignalR
-export interface ISignalRService {
-    createHubConnection(hubName: string): Promise<signalR.HubConnection>;
-    startConnection(hubName: string): Promise<void>;
-    stopConnection(hubName: string): Promise<void>;
-    on(hubName: string, eventName: string, callback: EventCallback): void;
-    off(hubName: string, eventName: string, callback: EventCallback): void;
-    invoke(hubName: string, methodName: string, ...args: any[]): Promise<any>;
-}
+    constructor() {
+        this.connections = new Map();
+    }
 
-// Classe pour gérer les connexions WebSocket via SignalR
-class SignalRService implements ISignalRService {
-    private hubConnections: Map<string, signalR.HubConnection> = new Map();
-    private eventHandlers: Map<string, Map<string, EventCallback[]>> = new Map();
-    private connectionStatus: Map<string, boolean> = new Map();
-    
-    // Méthode pour créer une connexion à un hub
-    public async createHubConnection(hubName: string): Promise<signalR.HubConnection> {
-        // Vérifier si la connexion existe déjà
-        const existingConnection = this.hubConnections.get(hubName);
-        if (existingConnection) {
-            return existingConnection;
+    /**
+     * Crée ou récupère une connexion à un hub SignalR
+     * @param hubName Nom du hub à connecter
+     * @returns Connexion au hub
+     */
+    public async getConnection(hubName: string): Promise<signalR.HubConnection> {
+        if (this.connections.has(hubName)) {
+            return this.connections.get(hubName)!;
         }
-        
+
+        // Vérifier si l'utilisateur est authentifié
+        if (!this.isAuthenticated()) {
+            console.warn(`[SignalRService] Authentification requise pour le hub ${hubName}`);
+            throw new Error('Authentification requise pour accéder au hub SignalR');
+        }
+
+        const hubUrl = `${API_CONFIG.WEBSOCKET_URL}/${hubName}`;
         console.log(`[SignalRService] Création d'une nouvelle connexion pour le hub ${hubName}`);
-        
-        // Créer une nouvelle connexion
+        console.log(`[SignalRService] URL WebSocket: ${hubUrl}`);
+
+        // Créer la connexion avec accessTokenFactory pour authentification automatique
         const connection = new signalR.HubConnectionBuilder()
-            .withUrl(`${API_CONFIG.WEBSOCKET_URL}/${hubName}`, {
-                // Options de transport
-                skipNegotiation: false,
-                transport: signalR.HttpTransportType.WebSockets,
-                
-                // Utiliser MSAL pour obtenir le token
+            .withUrl(hubUrl, {
                 accessTokenFactory: async () => {
                     try {
-                        const account = msalInstance.getAllAccounts()[0];
-                        if (!account) {
-                            throw new Error('No active account! Please sign in before connecting to SignalR.');
+                        const token = await authService.getAccessToken();
+                        if (!token) {
+                            console.warn('[SignalRService] Aucun compte actif trouvé pour obtenir le token');
+                            throw new Error('Token indisponible');
                         }
-
-                        const response = await msalInstance.acquireTokenSilent({
-                            scopes: protectedResources.api.scopes,
-                            account: account
-                        });
-
-                        return response.accessToken;
-                    } catch (error: any) {
-                        console.error('[SignalRService] Error getting token:', error);
-                        
-                        if (error.name === 'InteractionRequiredAuthError') {
-                            try {
-                                const response = await msalInstance.acquireTokenPopup({
-                                    scopes: protectedResources.api.scopes
-                                });
-                                return response.accessToken;
-                            } catch (popupError) {
-                                console.error('[SignalRService] Error getting token with popup:', popupError);
-                                throw popupError;
-                            }
-                        }
-                        
+                        return token;
+                    } catch (error) {
+                        console.error('[SignalRService] Erreur lors de l\'obtention du token:', error);
                         throw error;
                     }
                 }
             })
-            .withAutomaticReconnect({
-                nextRetryDelayInMilliseconds: (retryContext) => {
-                    if (retryContext.previousRetryCount === 0) {
-                        return 0;
-                    }
-                    if (retryContext.previousRetryCount >= 5) {
-                        return null;
-                    }
-                    return Math.min(1000 * Math.pow(2, retryContext.previousRetryCount), 30000);
-                }
-            })
+            .withAutomaticReconnect([0, 1000, 5000, 10000, 30000]) // Tentatives de reconnexion
             .configureLogging(signalR.LogLevel.Information)
             .build();
-        
-        // Stocker la connexion
-        this.hubConnections.set(hubName, connection);
-        
-        // Initialiser la map des gestionnaires d'événements pour ce hub
-        this.eventHandlers.set(hubName, new Map<string, EventCallback[]>());
-        
-        // Gérer les événements de connexion
-        connection.onclose((error) => {
-            console.log(`[SignalRService] Connexion fermée pour le hub ${hubName}`, error);
-            this.connectionStatus.set(hubName, false);
-        });
-        
-        connection.onreconnecting((error) => {
-            console.log(`[SignalRService] Tentative de reconnexion pour le hub ${hubName}`, error);
-            this.connectionStatus.set(hubName, false);
-        });
-        
-        connection.onreconnected((connectionId) => {
-            console.log(`[SignalRService] Reconnecté au hub ${hubName} avec l'ID ${connectionId}`);
-            this.connectionStatus.set(hubName, true);
-        });
-        
-        return connection;
-    }
-    
-    // Méthode pour démarrer une connexion
-    public async startConnection(hubName: string): Promise<void> {
-        const connection = await this.createHubConnection(hubName);
-        if (!this.connectionStatus.get(hubName)) {
-            try {
-                await connection.start();
-                console.log(`[SignalRService] Connexion établie avec le hub ${hubName}`);
-                this.connectionStatus.set(hubName, true);
-            } catch (error) {
-                console.error(`[SignalRService] Erreur lors de la connexion au hub ${hubName}:`, error);
-                this.connectionStatus.set(hubName, false);
-                throw error;
-            }
-        }
-    }
-    
-    // Méthode pour arrêter une connexion
-    public async stopConnection(hubName: string): Promise<void> {
-        const connection = this.hubConnections.get(hubName);
-        if (connection) {
-            try {
-                await connection.stop();
-                console.log(`[SignalRService] Connexion arrêtée pour le hub ${hubName}`);
-                this.connectionStatus.set(hubName, false);
-            } catch (error) {
-                console.error(`[SignalRService] Erreur lors de l'arrêt de la connexion au hub ${hubName}:`, error);
-                throw error;
-            }
-        }
-    }
-    
-    // Méthode pour s'abonner à un événement
-    public on(hubName: string, eventName: string, callback: EventCallback): void {
-        const connection = this.hubConnections.get(hubName);
-        if (!connection) {
-            throw new Error(`No connection found for hub ${hubName}`);
-        }
-        
-        const handlers = this.eventHandlers.get(hubName);
-        if (!handlers) {
-            throw new Error(`No event handlers found for hub ${hubName}`);
-        }
-        
-        if (!handlers.has(eventName)) {
-            handlers.set(eventName, []);
-        }
-        
-        const callbacks = handlers.get(eventName);
-        if (callbacks) {
-            callbacks.push(callback);
-            connection.on(eventName, callback);
-        }
-    }
-    
-    // Méthode pour se désabonner d'un événement
-    public off(hubName: string, eventName: string, callback: EventCallback): void {
-        const connection = this.hubConnections.get(hubName);
-        const handlers = this.eventHandlers.get(hubName);
-        
-        if (connection && handlers) {
-            const callbacks = handlers.get(eventName);
-            if (callbacks) {
-                const index = callbacks.indexOf(callback);
-                if (index !== -1) {
-                    callbacks.splice(index, 1);
-                    connection.off(eventName, callback);
-                }
-            }
-        }
-    }
-    
-    // Méthode pour invoquer une méthode sur le hub
-    public async invoke(hubName: string, methodName: string, ...args: any[]): Promise<any> {
-        const connection = this.hubConnections.get(hubName);
-        if (!connection) {
-            throw new Error(`No connection found for hub ${hubName}`);
-        }
-        
+
+        // Stocker la connexion avant démarrage pour éviter les doublons
+        this.connections.set(hubName, connection);
+
         try {
+            // Démarrer la connexion
+            await this.startConnection(connection);
+
+            // Configurer les gestionnaires par défaut pour déconnexion et reconnexion
+            connection.onclose((error) => {
+                console.log(`[SignalRService] Connexion au hub ${hubName} fermée`, error);
+                // En cas de fermeture, supprimer la connexion de la map pour permettre une nouvelle initialisation
+                this.connections.delete(hubName);
+            });
+
+            connection.onreconnecting((error) => {
+                console.log(`[SignalRService] Tentative de reconnexion au hub ${hubName}...`, error);
+            });
+
+            connection.onreconnected((connectionId) => {
+                console.log(`[SignalRService] Reconnecté au hub ${hubName} avec l'ID: ${connectionId}`);
+            });
+
+            return connection;
+        } catch (error) {
+            // En cas d'échec, supprimer la connexion pour permettre une nouvelle tentative
+            this.connections.delete(hubName);
+            throw error;
+        }
+    }
+
+    /**
+     * Enregistre une méthode sur une connexion
+     * @param hubName Nom du hub
+     * @param methodName Nom de la méthode
+     * @param callback Fonction à appeler quand la méthode est invoquée
+     */
+    public async registerHandler(
+        hubName: string,
+        methodName: string,
+        callback: (...args: any[]) => void
+    ): Promise<void> {
+        try {
+            // Vérifier si l'utilisateur est authentifié
+            if (!this.isAuthenticated()) {
+                console.warn(`[SignalRService] Authentification requise pour enregistrer un gestionnaire sur ${hubName}`);
+                return;
+            }
+
+            const connection = await this.getConnection(hubName);
+            connection.on(methodName, callback);
+            console.log(`[SignalRService] Handler enregistré pour la méthode ${methodName} sur le hub ${hubName}`);
+        } catch (error) {
+            console.error(`[SignalRService] Impossible d'enregistrer le gestionnaire pour ${methodName}:`, error);
+        }
+    }
+
+    /**
+     * Envoie une méthode à un hub
+     * @param hubName Nom du hub
+     * @param methodName Méthode à invoquer
+     * @param args Arguments à passer à la méthode
+     */
+    public async invokeMethod(hubName: string, methodName: string, ...args: any[]): Promise<any> {
+        try {
+            // Vérifier si l'utilisateur est authentifié
+            if (!this.isAuthenticated()) {
+                console.warn(`[SignalRService] Authentification requise pour invoquer une méthode sur ${hubName}`);
+                throw new Error('Authentification requise');
+            }
+
+            // Vérifier si la connexion existe
+            if (!this.connections.has(hubName)) {
+                console.log(`[SignalRService] Connexion au hub ${hubName} non trouvée`);
+                await this.getConnection(hubName);
+            }
+
+            const connection = this.connections.get(hubName);
+            if (!connection) {
+                console.error(`[SignalRService] Aucune connexion active pour le hub ${hubName}`);
+                throw new Error(`Connexion au hub ${hubName} non disponible`);
+            }
+
+            console.log(`[SignalRService] Invocation de la méthode ${methodName} sur le hub ${hubName}...`);
             return await connection.invoke(methodName, ...args);
         } catch (error) {
-            console.error(`[SignalRService] Erreur lors de l'invocation de la méthode ${methodName} sur le hub ${hubName}:`, error);
+            console.error(`[SignalRService] Erreur lors de l'invocation de ${methodName}:`, error);
             throw error;
+        }
+    }
+
+    /**
+     * Ferme une connexion à un hub
+     * @param hubName Nom du hub à déconnecter
+     */
+    public async closeConnection(hubName: string): Promise<void> {
+        const connection = this.connections.get(hubName);
+
+        if (connection) {
+            await connection.stop();
+            this.connections.delete(hubName);
+            console.log(`[SignalRService] Connexion au hub ${hubName} fermée`);
+        }
+    }
+
+    /**
+     * Vérifie si le serveur SignalR est disponible
+     * @param hubName Nom du hub à tester
+     * @returns true si le serveur est disponible
+     */
+    public async isHubAvailable(hubName: string): Promise<boolean> {
+        try {
+            const hubUrl = `${API_CONFIG.WEBSOCKET_URL}/${hubName}/negotiate`;
+            const response = await fetch(hubUrl, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
+            return response.status !== 404;
+        } catch (error) {
+            console.warn(`[SignalRService] Hub ${hubName} non disponible:`, error);
+            return false;
+        }
+    }
+
+    /**
+     * Crée une connexion seulement si le hub est disponible
+     * @param hubName Nom du hub
+     * @returns Connexion au hub ou null si indisponible
+     */
+    public async getConnectionSafe(hubName: string): Promise<signalR.HubConnection | null> {
+        try {
+            // Vérifier d'abord si le hub est disponible
+            const isAvailable = await this.isHubAvailable(hubName);
+            if (!isAvailable) {
+                console.warn(`[SignalRService] Hub ${hubName} non disponible, connexion annulée`);
+                return null;
+            }
+            
+            return await this.getConnection(hubName);
+        } catch (error) {
+            console.warn(`[SignalRService] Impossible de se connecter au hub ${hubName}:`, error);
+            return null;
+        }
+    }
+
+    /**
+     * Ferme toutes les connexions
+     */
+    public async closeAllConnections(): Promise<void> {
+        const connectionPromises = Array.from(this.connections.entries()).map(
+            async ([hubName, connection]) => {
+                await connection.stop();
+                console.log(`[SignalRService] Connexion au hub ${hubName} fermée`);
+            }
+        );
+
+        await Promise.all(connectionPromises);
+        this.connections.clear();
+    }
+
+    /**
+     * Vérifie si l'utilisateur est authentifié avant de tenter une connexion
+     * @returns true si un utilisateur est connecté
+     */
+    private isAuthenticated(): boolean {
+        return authService.isAuthenticated();
+    }
+
+    /**
+     * Démarre une connexion avec gestion d'erreur et tentatives
+     * @param connection Connexion à démarrer
+     * @param retryCount Nombre de tentatives actuelles
+     * @param maxRetries Nombre maximum de tentatives
+     */
+    private async startConnection(
+        connection: signalR.HubConnection,
+        retryCount = 0,
+        maxRetries = 3
+    ): Promise<void> {
+        try {
+            console.log(`[SignalRService] Tentative de connexion au hub ${connection.baseUrl || "inconnu"}...`);
+            await connection.start();
+            console.log('[SignalRService] Connexion SignalR établie!');
+        } catch (err: any) {
+            console.error('[SignalRService] Erreur lors de la connexion au hub:', err);
+            console.log('[SignalRService] Message d\'erreur:', err.message);
+
+            if (err.message && err.message.includes('Unauthorized')) {
+                console.error('[SignalRService] Erreur d\'authentification 401, la connexion nécessite un token valide.');
+                throw err; // Ne pas réessayer en cas d'erreur d'authentification
+            }
+
+            if (retryCount < maxRetries) {
+                console.log(`[SignalRService] Nouvelle tentative dans ${Math.pow(2, retryCount) * 1000}ms...`);
+                await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+                await this.startConnection(connection, retryCount + 1, maxRetries);
+            } else {
+                console.error('[SignalRService] Échec de connexion après plusieurs tentatives');
+                throw err;
+            }
         }
     }
 }
 
-// Exporter une instance unique du service
-export const signalRService = new SignalRService(); 
+// Export d'une instance singleton
+const signalRService = new SignalRService();
+export default signalRService; 

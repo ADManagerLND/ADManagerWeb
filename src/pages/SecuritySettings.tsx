@@ -1,6 +1,6 @@
 // src/pages/SecuritySettings.tsx
 import React from 'react';
-import { Card, Form, Input, Button } from 'antd';
+import {Button, Card, Form, Input} from 'antd';
 
 const SecuritySettings: React.FC = () => {
     const [form] = Form.useForm();
@@ -16,17 +16,17 @@ const SecuritySettings: React.FC = () => {
                 <Form.Item
                     label="Mot de passe actuel"
                     name="currentPassword"
-                    rules={[{ required: true, message: 'Entrez votre mot de passe actuel' }]}
+                    rules={[{required: true, message: 'Entrez votre mot de passe actuel'}]}
                 >
-                    <Input.Password placeholder="Mot de passe actuel" />
+                    <Input.Password placeholder="Mot de passe actuel"/>
                 </Form.Item>
 
                 <Form.Item
                     label="Nouveau mot de passe"
                     name="newPassword"
-                    rules={[{ required: true, message: 'Entrez un nouveau mot de passe' }]}
+                    rules={[{required: true, message: 'Entrez un nouveau mot de passe'}]}
                 >
-                    <Input.Password placeholder="Nouveau mot de passe" />
+                    <Input.Password placeholder="Nouveau mot de passe"/>
                 </Form.Item>
 
                 <Form.Item
@@ -34,8 +34,8 @@ const SecuritySettings: React.FC = () => {
                     name="confirmPassword"
                     dependencies={['newPassword']}
                     rules={[
-                        { required: true, message: 'Confirmez le nouveau mot de passe' },
-                        ({ getFieldValue }) => ({
+                        {required: true, message: 'Confirmez le nouveau mot de passe'},
+                        ({getFieldValue}) => ({
                             validator(_, value) {
                                 if (!value || getFieldValue('newPassword') === value) {
                                     return Promise.resolve();
@@ -45,7 +45,7 @@ const SecuritySettings: React.FC = () => {
                         }),
                     ]}
                 >
-                    <Input.Password placeholder="Confirmer mot de passe" />
+                    <Input.Password placeholder="Confirmer mot de passe"/>
                 </Form.Item>
 
                 <Form.Item>

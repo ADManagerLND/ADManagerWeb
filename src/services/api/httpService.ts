@@ -1,91 +1,108 @@
-import { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
-import apiClient from './apiClient'; // Importer notre apiClient configuré avec MSAL
-// import { API_CONFIG, getConfig } from './config'; // Probablement plus nécessaire si apiClient gère baseURL
+// src/services/api/httpService.ts – v3 : compatibilité AxiosHeaders (TS 5 / axios ≥1)
+// -----------------------------------------------------------------------------
+import axios, {AxiosHeaders, AxiosInstance, AxiosRequestConfig, InternalAxiosRequestConfig} from 'axios';
+import {API_CONFIG} from './config';
+import authService from '../auth/authService';
 
-// Interface pour les options du service HTTP (peut être simplifiée ou supprimée)
-interface HttpServiceOptions { 
-    // Si vous avez encore besoin d'options spécifiques par instance, sinon à supprimer
+const isFormData = (d: unknown): d is FormData => typeof FormData !== 'undefined' && d instanceof FormData;
+
+// Petit utilitaire pour poser un header quelle que soit la forme (plain object
+// ou instance AxiosHeaders)
+function setHeader(headers: unknown, key: string, value: string | undefined) {
+    if (!value) return;
+    if (headers instanceof AxiosHeaders) {
+        headers.set(key, value);
+    } else if (headers && typeof headers === 'object') {
+        (headers as any)[key] = value;
+    }
 }
 
-// Classe pour gérer les requêtes HTTP
+function deleteHeader(headers: unknown, key: string) {
+    if (headers instanceof AxiosHeaders) {
+        headers.delete(key);
+    } else if (headers && typeof headers === 'object') {
+        delete (headers as any)[key];
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Instance Axios --------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Instance Axios (withCredentials=true pour CORS + cookies éventuels) ---------
+const instance: AxiosInstance = axios.create({
+    baseURL: API_CONFIG.BASE_URL,
+    withCredentials: true // ← important pour CORS credentials
+});
+
+// -----------------------------------------------------------------------------
+// Intercepteur REQUEST --------------------------------------------------------
+instance.interceptors.request.use(async (cfg: InternalAxiosRequestConfig) => {
+    console.log(`[HttpService] → ${cfg.method?.toUpperCase()} ${cfg.url}`);
+
+
+    try {
+        const token = await authService.getAccessToken();
+        if (token) {
+            cfg.headers = cfg.headers ?? new AxiosHeaders();
+            setHeader(cfg.headers, 'Authorization', `Bearer ${token}`);
+        }
+    } catch (e) {
+        console.warn('[HttpService]   token KO', e);
+    }
+
+
+    // — FormData : remove Content‑Type -----------------------------------------
+    if (isFormData(cfg.data)) {
+        deleteHeader(cfg.headers, 'Content-Type');
+        console.log('[HttpService]   Content-Type supprimé (FormData)');
+    }
+
+    // — Anti‑cache GET ----------------------------------------------------------
+    if (cfg.method === 'get') {
+        setHeader(cfg.headers, 'Cache-Control', 'no-cache');
+        setHeader(cfg.headers, 'Pragma', 'no-cache');
+        setHeader(cfg.headers, 'Expires', '0');
+    }
+
+    return cfg;
+});
+
+// -----------------------------------------------------------------------------
+// Intercepteur RESPONSE -------------------------------------------------------
+instance.interceptors.response.use(
+    (res) => {
+        console.log(`[HttpService] ← ${res.status} ${res.config.method?.toUpperCase()} ${res.config.url}`);
+        return res;
+    },
+    (err) => {
+        console.error('[HttpService] ← ERR', err.response?.status, err.config?.url);
+        return Promise.reject(err);
+    }
+);
+
+// -----------------------------------------------------------------------------
+// Helper CRUD -----------------------------------------------------------------
 class HttpService {
-    private axiosInstance: AxiosInstance;
-    
-    constructor() {
-        this.axiosInstance = apiClient;
+    get<T = unknown>(url: string, cfg?: AxiosRequestConfig) {
+        return instance.get<T>(url, cfg);
     }
-    
-    // Méthode pour effectuer une requête GET
-    public async get<T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
-        console.log(`[HttpService] GET ${url} - début de la requête`);
-        try {
-            const response = await this.axiosInstance.get<T>(url, config);
-            console.log(`[HttpService] GET ${url} - réponse:`, response.status);
-            return response;
-        } catch (error: any) {
-            console.error(`[HttpService] GET ${url} - erreur:`, error.message);
-            throw error;
-        }
+
+    post<T = unknown>(url: string, data?: any, cfg?: AxiosRequestConfig) {
+        return instance.post<T>(url, data, cfg);
     }
-    
-    // Méthode pour effectuer une requête POST
-    public async post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
-        console.log(`[HttpService] POST ${url} - début de la requête`);
-        try {
-            const response = await this.axiosInstance.post<T>(url, data, config);
-            console.log(`[HttpService] POST ${url} - réponse:`, response.status);
-            return response;
-        } catch (error: any) {
-            console.error(`[HttpService] POST ${url} - erreur:`, error.message);
-            throw error;
-        }
+
+    put<T = unknown>(url: string, data?: any, cfg?: AxiosRequestConfig) {
+        return instance.put<T>(url, data, cfg);
     }
-    
-    // Méthode pour effectuer une requête PUT
-    public async put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
-        console.log(`[HttpService] PUT ${url} - début de la requête`);
-        try {
-            const response = await this.axiosInstance.put<T>(url, data, config);
-            console.log(`[HttpService] PUT ${url} - réponse:`, response.status);
-            return response;
-        } catch (error: any) {
-            console.error(`[HttpService] PUT ${url} - erreur:`, error.message);
-            throw error;
-        }
+
+    patch<T = unknown>(url: string, data?: any, cfg?: AxiosRequestConfig) {
+        return instance.patch<T>(url, data, cfg);
     }
-    
-    // Méthode pour effectuer une requête DELETE
-    public async delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
-        console.log(`[HttpService] DELETE ${url} - début de la requête`);
-        try {
-            const response = await this.axiosInstance.delete<T>(url, config);
-            console.log(`[HttpService] DELETE ${url} - réponse:`, response.status);
-            return response;
-        } catch (error: any) {
-            console.error(`[HttpService] DELETE ${url} - erreur:`, error.message);
-            throw error;
-        }
-    }
-    
-    // Méthode pour effectuer une requête PATCH
-    public async patch<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
-        console.log(`[HttpService] PATCH ${url} - début de la requête`);
-        try {
-            const response = await this.axiosInstance.patch<T>(url, data, config);
-            console.log(`[HttpService] PATCH ${url} - réponse:`, response.status);
-            return response;
-        } catch (error: any) {
-            console.error(`[HttpService] PATCH ${url} - erreur:`, error.message);
-            throw error;
-        }
+
+    delete<T = unknown>(url: string, cfg?: AxiosRequestConfig) {
+        return instance.delete<T>(url, cfg);
     }
 }
 
-// Créer et exporter une instance par défaut du service HTTP
 export const httpService = new HttpService();
-
-// La fonction pour créer une instance personnalisée n'est probablement plus nécessaire
-// si toutes les requêtes doivent passer par l'intercepteur MSAL de apiClient.
-// export const createHttpService = (options?: HttpServiceOptions) => {
-//     return new HttpService(options);
-// };
+export default httpService;

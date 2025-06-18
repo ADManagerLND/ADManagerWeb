@@ -1,87 +1,98 @@
-import { Configuration, PublicClientApplication } from "@azure/msal-browser";
-import { API_CONFIG } from "./services/api/config";
+import {Configuration, LogLevel, PublicClientApplication} from "@azure/msal-browser";
 
-// Configuration MSAL
+// Configuration depuis les variables d'environnement
+export const tenantId = import.meta.env.VITE_AZURE_TENANT_ID || "a70e01a3-ae69-4d17-ad6d-407f168bb45e";
+export const clientId = import.meta.env.VITE_AZURE_CLIENT_ID || "114717d2-5cae-4569-900a-efa4e58eb3f5";
+
+console.log('🔧 Configuration Azure AD:');
+console.log(`   TenantId: ${tenantId}`);
+console.log(`   ClientId: ${clientId}`);
+
+// Configuration MSAL simplifiée et corrigée
 export const msalConfig: Configuration = {
     auth: {
-        clientId: import.meta.env.VITE_AZURE_CLIENT_ID,
-        authority: `https://login.microsoftonline.com/${import.meta.env.VITE_AZURE_TENANT_ID}`,
+        clientId: clientId,
+        authority: `https://login.microsoftonline.com/${tenantId}`,
         redirectUri: window.location.origin,
         postLogoutRedirectUri: window.location.origin,
         navigateToLoginRequestUrl: true,
     },
     cache: {
-        cacheLocation: "sessionStorage",
-        storeAuthStateInCookie: true, // Nécessaire pour IE11/Edge
+        cacheLocation: "localStorage",
+        storeAuthStateInCookie: true,
     },
     system: {
-        allowRedirectInIframe: true, // Permettre la redirection dans un iframe
+        allowRedirectInIframe: true,
         loggerOptions: {
-            loggerCallback: (level, message, containsPii) => {
+            loggerCallback: (level: LogLevel, message: string, containsPii: boolean) => {
                 if (containsPii) {
                     return;
                 }
+                const prefix = '🔐 MSAL:';
                 switch (level) {
-                    case 0:
-                        console.error(message);
-                        return;
-                    case 1:
-                        console.warn(message);
-                        return;
-                    case 2:
-                        console.info(message);
-                        return;
-                    case 3:
-                        console.debug(message);
-                        return;
-                    case 4:
-                        console.trace(message);
-                        return;
+                    case LogLevel.Error:
+                        console.error(`${prefix} ERROR:`, message);
+                        break;
+                    case LogLevel.Warning:
+                        console.warn(`${prefix} WARNING:`, message);
+                        break;
+                    case LogLevel.Info:
+                        console.info(`${prefix} INFO:`, message);
+                        break;
+                    case LogLevel.Verbose:
+                        console.debug(`${prefix} VERBOSE:`, message);
+                        break;
+                    case LogLevel.Trace:
+                        console.trace(`${prefix} TRACE:`, message);
+                        break;
                 }
             },
-            piiLoggingEnabled: false
+            piiLoggingEnabled: false,
+            logLevel: LogLevel.Error
         }
     }
 };
 
-// Configuration des scopes pour l'authentification
+// Scopes pour la connexion initiale
 export const loginRequest = {
-    scopes: ["User.Read", "openid", "profile", "email"]
+    scopes: [
+        "openid",
+        "profile",
+        "email",
+        "User.Read"
+    ],
+    prompt: "select_account"
 };
 
-// ID de l'application (GUID)
-export const appId = import.meta.env.VITE_AZURE_CLIENT_ID || "114717d2-5cae-4569-900a-efa4e58eb3f5";
-
-// Configuration des scopes pour l'API
+// Scopes pour les appels API
 export const apiRequest = {
-    // Pour une application qui demande un token pour elle-même, utiliser directement le GUID
-    scopes: [appId + "/.default"]
+    scopes: [`${clientId}/.default`]
 };
 
-// Instance MSAL
+// Instance MSAL singleton
 export const msalInstance = new PublicClientApplication(msalConfig);
 
-// Assurez-vous qu'il y a un compte connecté
-msalInstance.initialize().then(() => {
-    // Sélectionner le compte si disponible
-    const accounts = msalInstance.getAllAccounts();
-    if (accounts.length > 0) {
-        msalInstance.setActiveAccount(accounts[0]);
-    }
-});
+// Getter pour récupérer l'instance externe
+export function getMsalInstance(): PublicClientApplication {
+    return msalInstance;
+}
 
-// Configuration des ressources protégées (votre API)
+// Initialisation explicite
+export const initializeMsal = async (): Promise<void> => {
+    try {
+        console.log('🚀 Initialisation de MSAL...');
+        await msalInstance.initialize();
+        console.log('✅ MSAL initialisé avec succès');
+    } catch (error) {
+        console.error('❌ Erreur lors de l\'initialisation de MSAL:', error);
+        throw error;
+    }
+};
+
+// Configuration des ressources protégées
 export const protectedResources = {
     api: {
-        endpoint: import.meta.env.VITE_API_URL || "http://localhost:5021/api",
-        scopes: [
-            // Même scope que celui défini dans apiRequest
-            appId + "/.default"
-        ],
-    },
-    // Vous pouvez ajouter d'autres ressources protégées ici (ex: Microsoft Graph)
-    // graphMe: {
-    //   endpoint: "https://graph.microsoft.com/v1.0/me",
-    //   scopes: ["User.Read"]
-    // }
-}; 
+        endpoint: `http://localhost:5021/api`,
+        scopes: [`${clientId}/.default`]
+    }
+};
