@@ -36,6 +36,7 @@ import {
     UploadOutlined
 } from '@ant-design/icons';
 import HeaderMappingEditor from '../components/HeaderMappingEditor';
+import ADPreview from '../components/ADPreview';
 import TeamsConfigTab from '../components/teams/TeamsConfigTab';
 import ActionTypesSelector from '../components/ActionTypesSelector';
 import { importConfigService, SavedImportConfig } from '../services/api/importConfigService';
@@ -54,6 +55,34 @@ const EnhancedImportConfigSettings: React.FC = () => {
     const [showConfigEditor, setShowConfigEditor] = useState(false);
     const [activeTabKey, setActiveTabKey] = useState('1');
     const [form] = Form.useForm();
+
+    // États pour la prévisualisation AD
+    const [currentMappings, setCurrentMappings] = useState<Array<{
+        id: string;
+        csvColumn: string;
+        adAttribute: string;
+        isRequired: boolean;
+        defaultValue?: string;
+    }>>([]);
+    const [sampleCsvData, setSampleCsvData] = useState<any[]>([{
+        prenom: 'Jean',
+        nom: 'Dupont',
+        classe: 'TS1',
+        email: 'jean.dupont@example.com',
+        telephone: '0123456789'
+    }]);
+
+    // Mappages par défaut pour l'exemple
+    const defaultMappings = {
+        sAMAccountName: '%prenom:username%.%nom:username%',
+        userPrincipalName: '%prenom:username%.%nom:username%@lycee.local',
+        mail: '%email%',
+        givenName: '%prenom%',
+        sn: '%nom:uppercase%',
+        displayName: '%prenom% %nom:uppercase%',
+        cn: '%prenom% %nom%',
+        description: 'Élève de %classe%'
+    };
 
     // Fonction pour convertir les noms d'actions en valeurs numériques d'enum
     const convertActionTypesToNumbers = (actionTypes: string[]): number[] => {
@@ -90,6 +119,41 @@ const EnhancedImportConfigSettings: React.FC = () => {
             setLoading(false);
         }
     };
+
+    // Initialiser la prévisualisation automatiquement
+    useEffect(() => {
+        // Charger la prévisualisation avec des données d'exemple au démarrage
+        if (sampleCsvData.length > 0) {
+            const currentHeaderMapping = form.getFieldValue('headerMapping');
+            
+            // Si pas de mappages dans le formulaire, utiliser les mappages par défaut
+            if (!currentHeaderMapping || Object.keys(currentHeaderMapping).length === 0) {
+                handleMappingChange(defaultMappings);
+                // Optionnellement, pré-remplir le formulaire avec les mappages par défaut
+                form.setFieldValue('headerMapping', defaultMappings);
+            } else {
+                handleMappingChange(currentHeaderMapping);
+            }
+        }
+    }, [sampleCsvData, showConfigEditor]);
+
+    // Initialiser quand une configuration est sélectionnée
+    useEffect(() => {
+        if (selectedConfig && selectedConfig.configData?.headerMapping) {
+            // Pré-remplir le formulaire avec les données de la configuration
+            form.setFieldsValue({
+                name: selectedConfig.name,
+                description: selectedConfig.description,
+                headerMapping: selectedConfig.configData.headerMapping,
+                manualColumns: selectedConfig.configData.manualColumns,
+                ouColumn: selectedConfig.configData.ouColumn,
+                // ... autres champs si nécessaire
+            });
+
+            // Mettre à jour la prévisualisation avec les mappages de la configuration
+            handleMappingChange(selectedConfig.configData.headerMapping);
+        }
+    }, [selectedConfig]);
 
     // Charger les configurations au montage
     useEffect(() => {
@@ -161,6 +225,12 @@ const EnhancedImportConfigSettings: React.FC = () => {
         setSelectedConfig(null);
         form.resetFields();
         setShowConfigEditor(true);
+        
+        // Initialiser la prévisualisation avec les mappages par défaut
+        setTimeout(() => {
+            handleMappingChange(defaultMappings);
+            form.setFieldValue('headerMapping', defaultMappings);
+        }, 100);
     };
 
     const handleEditConfig = (config: SavedImportConfig) => {
@@ -384,6 +454,39 @@ const EnhancedImportConfigSettings: React.FC = () => {
         handleEditConfig(testConfig);
     };
 
+    // Convertir les mappages HeaderMapping en format pour ADPreview
+    const convertHeaderMappingToADPreview = (headerMapping: Record<string, string>) => {
+        return Object.entries(headerMapping).map(([adAttribute, template], index) => ({
+            id: `mapping-${index}`,
+            csvColumn: template, // Le template peut contenir des variables comme %prenom%
+            adAttribute,
+            isRequired: ['sAMAccountName', 'displayName', 'userPrincipalName'].includes(adAttribute),
+            defaultValue: ''
+        }));
+    };
+
+    // Mettre à jour les mappages quand ils changent
+    const handleMappingChange = (mappings: Record<string, string>) => {
+        const convertedMappings = convertHeaderMappingToADPreview(mappings);
+        setCurrentMappings(convertedMappings);
+    };
+
+    // Fonction pour actualiser la prévisualisation
+    const handlePreviewRefresh = () => {
+        // Recréer les données d'exemple
+        setSampleCsvData([{
+            prenom: 'Jean',
+            nom: 'Dupont',
+            classe: 'TS1',
+            email: 'jean.dupont@example.com',
+            telephone: '0123456789'
+        }]);
+
+        // Forcer la mise à jour des mappages actuels
+        const currentHeaderMapping = form.getFieldValue('headerMapping') || {};
+        handleMappingChange(currentHeaderMapping);
+    };
+
     const renderConfigForm = () => (
         <Form form={form} layout="vertical" onFinish={handleSaveConfig}>
             <Tabs 
@@ -416,23 +519,7 @@ const EnhancedImportConfigSettings: React.FC = () => {
                                     </Form.Item>
                                 </Col>
                             </Row>
-                            <Row gutter={16}>
-                                <Col span={8}>
-                                    <Form.Item label="Créer les OUs" name="createMissingOUs" valuePropName="checked">
-                                        <Switch />
-                                    </Form.Item>
-                                </Col>
-                                <Col span={8}>
-                                    <Form.Item label="Écraser existants" name="overwriteExisting" valuePropName="checked">
-                                        <Switch />
-                                    </Form.Item>
-                                </Col>
-                                <Col span={8}>
-                                    <Form.Item label="Configuration active" name="isEnabled" valuePropName="checked">
-                                        <Switch />
-                                    </Form.Item>
-                                </Col>
-                            </Row>
+
                             
                             <Divider>Actions à exécuter</Divider>
                             <Form.Item 
@@ -529,8 +616,25 @@ const EnhancedImportConfigSettings: React.FC = () => {
                                 name="headerMapping"
                                 rules={[{ required: true, message: 'Au moins un mappage est requis' }]}
                             >
-                                <HeaderMappingEditor />
+                                <HeaderMappingEditor onChange={handleMappingChange} />
                             </Form.Item>
+                            
+                            <Divider>Prévisualisation Active Directory</Divider>
+                            <div style={{ marginTop: 16 }}>
+                                <Alert
+                                    message="Prévisualisation en temps réel"
+                                    description="Voici comment apparaîtra un utilisateur dans Active Directory avec le mappage configuré ci-dessus."
+                                    type="info"
+                                    showIcon
+                                    style={{ marginBottom: 16 }}
+                                />
+                                <ADPreview
+                                    csvData={sampleCsvData}
+                                    mappings={currentMappings}
+                                    loading={false}
+                                    onRefresh={handlePreviewRefresh}
+                                />
+                            </div>
                         </>
                     )
                 },

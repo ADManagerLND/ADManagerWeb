@@ -42,7 +42,7 @@ const Settings: React.FC = () => {
         <div style={{
             padding: 0,
             background: '#fafbfc',
-            minHeight: '100vh'
+            height: '100%'
         }}>
             <div style={{padding: '24px'}}>
                 {/* En-tête de la section actuelle */}

@@ -131,3 +131,30 @@ export interface LogEntry {
     level?: 'info' | 'warning' | 'error' | 'success';
     message: string;
 }
+
+export const getActionTypeDetails = (actionType: ActionType) => {
+    switch (actionType) {
+        case ActionType.CREATE_USER:
+            return { label: 'Créer Utilisateur', description: 'Crée un nouvel utilisateur dans l\'annuaire.' };
+        case ActionType.UPDATE_USER:
+            return { label: 'Mettre à jour Utilisateur', description: 'Met à jour les attributs d\'un utilisateur existant.' };
+        case ActionType.DELETE_USER:
+            return { label: 'Supprimer Utilisateur', description: 'Supprime un utilisateur (souvent un orphelin).' };
+        case ActionType.MOVE_USER:
+            return { label: 'Déplacer Utilisateur', description: 'Déplace un utilisateur vers une autre unité organisationnelle.' };
+        case ActionType.CREATE_OU:
+            return { label: 'Créer OU', description: 'Crée une nouvelle unité organisationnelle.' };
+        case ActionType.DELETE_OU:
+            return { label: 'Supprimer OU', description: 'Supprime une unité organisationnelle (si vide).' };
+        case ActionType.CREATE_STUDENT_FOLDER:
+            return { label: 'Créer Dossier Élève', description: 'Crée un dossier personnel pour un élève.' };
+        case ActionType.CREATE_CLASS_GROUP_FOLDER:
+            return { label: 'Créer Dossier Groupe Classe', description: 'Crée un dossier pour un groupe classe.' };
+        case ActionType.CREATE_TEAM:
+            return { label: 'Créer Équipe Teams', description: 'Crée une nouvelle équipe dans Microsoft Teams.' };
+        case ActionType.ADD_USER_TO_GROUP:
+            return { label: 'Ajouter à un groupe', description: 'Ajoute un utilisateur à un groupe de sécurité ou de distribution.' };
+        default:
+            return { label: actionType, description: 'Action non spécifiée.' };
+    }
+};

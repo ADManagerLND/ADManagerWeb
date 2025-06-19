@@ -7,9 +7,10 @@
 
 html, body, #root {
     width: 100%;
-    height: 100%;
+    height: 100vh;
     margin: 0;
     padding: 0;
+    overflow: hidden;
 }
 
 /* === GLOBAL STYLES === */
@@ -31,8 +32,8 @@ body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     min-width: 320px;
-    min-height: 100vh;
-    overflow: auto;
+    height: 100vh;
+    overflow: hidden;
 }
 
 a {
@@ -77,24 +78,22 @@ button:focus-visible {
     height: 100vh;
     margin: 0;
     padding: 0;
-    display: flex;
-    flex-direction: column;
     overflow: hidden;
 }
 
 .ant-layout {
-    overflow: auto !important;
-    max-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
 }
 
 .ant-layout-content {
-    overflow-y: auto !important;
-    padding-bottom: 24px;
+    overflow-y: auto;
+    height: calc(100vh - 70px);
 }
 
 .app-container {
     flex: 1;
-    overflow: auto;
+    overflow: hidden;
 }
 
 .content-container {

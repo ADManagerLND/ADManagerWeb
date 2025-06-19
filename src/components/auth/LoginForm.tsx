@@ -1,9 +1,12 @@
 import React, {useEffect, useState} from 'react';
-import {Alert, Button, Card, Space, Spin, Typography} from 'antd';
+import {Alert, Button, Card, Space, Spin, Typography, Progress} from 'antd';
 import {LoadingOutlined, SafetyOutlined, WindowsOutlined} from '@ant-design/icons';
 import {useAuth} from '../../services/auth/AuthContext';
 import {useNavigate} from 'react-router-dom';
 import logoImage from '../../assets/logo.png';
+import AuthLoadingSpinner from './AuthLoadingSpinner';
+import AuthStatusIndicator from './AuthStatusIndicator';
+import '../../styles/AuthComponents.css';
 
 const {Title, Text, Paragraph} = Typography;
 
@@ -15,6 +18,28 @@ const LoginForm: React.FC = () => {
     const {isLoading, isAuthenticated, error, isInitialized} = authState;
     const navigate = useNavigate();
     const [localLoading, setLocalLoading] = useState<boolean>(false);
+    const [authStep, setAuthStep] = useState<'idle' | 'connecting' | 'verifying' | 'redirecting'>('idle');
+
+    // Gérer le titre de l'onglet avant la redirection Microsoft
+    useEffect(() => {
+        switch (authStep) {
+            case 'connecting':
+                document.title = '🔄 Connexion à Microsoft... | AD Manager';
+                break;
+            case 'redirecting':
+                document.title = '✅ Retour de Microsoft... | AD Manager';
+                break;
+            default:
+                document.title = 'AD Manager - Connexion sécurisée';
+        }
+    }, [authStep]);
+
+    // Restaurer le titre quand l'authentification est terminée
+    useEffect(() => {
+        if (isAuthenticated && isInitialized) {
+            document.title = 'AD Manager';
+        }
+    }, [isAuthenticated, isInitialized]);
 
     // Rediriger vers la page principale si déjà authentifié
     useEffect(() => {
@@ -28,12 +53,41 @@ const LoginForm: React.FC = () => {
     const handleMicrosoftLogin = async () => {
         try {
             setLocalLoading(true);
+            setAuthStep('connecting');
             console.log('🔑 Tentative de connexion Microsoft...');
+            
             await login();
         } catch (error) {
             console.error('❌ Erreur lors de la connexion avec Microsoft:', error);
+            setAuthStep('idle');
         } finally {
             setLocalLoading(false);
+        }
+    };
+
+    // Messages dynamiques selon l'étape d'authentification
+    const getAuthMessage = () => {
+        switch (authStep) {
+            case 'connecting':
+                return {
+                    message: "Connexion à Microsoft...",
+                    subMessage: "Redirection vers Azure AD"
+                };
+            case 'verifying':
+                return {
+                    message: "Vérification des identifiants...",
+                    subMessage: "Validation en cours"
+                };
+            case 'redirecting':
+                return {
+                    message: "Authentification réussie",
+                    subMessage: "Redirection vers l'application"
+                };
+            default:
+                return {
+                    message: "Initialisation de la plateforme...",
+                    subMessage: "Veuillez patienter"
+                };
         }
     };
 
@@ -54,7 +108,8 @@ const LoginForm: React.FC = () => {
                     borderRadius: '16px',
                     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
                     textAlign: 'center',
-                    maxWidth: '400px'
+                    maxWidth: '400px',
+                    minWidth: '350px'
                 }}>
                     <img
                         src={logoImage}
@@ -66,15 +121,16 @@ const LoginForm: React.FC = () => {
                             marginBottom: '24px'
                         }}
                     />
-                    <Spin
+                    
+                    <AuthLoadingSpinner
+                        message={getAuthMessage().message}
+                        subMessage={getAuthMessage().subMessage}
+                        showSecurityInfo={true}
                         size="large"
-                        indicator={<LoadingOutlined style={{fontSize: 32, color: '#1e40af'}} spin/>}
                     />
+                    
                     <div style={{marginTop: 24}}>
                         <h3 style={{margin: '0 0 8px 0', color: '#1f2937'}}>AD Manager</h3>
-                        <Text style={{color: '#666'}}>
-                            Initialisation de la plateforme...
-                        </Text>
                     </div>
                 </div>
             </div>
@@ -185,6 +241,54 @@ const LoginForm: React.FC = () => {
                 )}
 
                 <Space direction="vertical" size="large" style={{width: '100%'}}>
+                    {/* Indicateur de statut d'authentification */}
+                    {localLoading && (
+                        <div 
+                            className="auth-fade-in-up auth-loading-container"
+                            style={{
+                                background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)',
+                                padding: '16px',
+                                borderRadius: '12px',
+                                border: '1px solid #bae6fd',
+                                marginBottom: '16px'
+                            }}
+                        >
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                marginBottom: '12px'
+                            }}>
+                                <AuthStatusIndicator 
+                                    status="loading" 
+                                    message={getAuthMessage().message}
+                                    showText={true}
+                                    size="default"
+                                />
+                            </div>
+                            
+                            <Progress
+                                percent={authStep === 'connecting' ? 33 : authStep === 'verifying' ? 66 : 100}
+                                size="small"
+                                status="active"
+                                strokeColor={{
+                                    from: '#1890ff',
+                                    to: '#52c41a',
+                                }}
+                                showInfo={false}
+                            />
+                            
+                            <Text style={{
+                                fontSize: '12px',
+                                color: '#0369a1',
+                                display: 'block',
+                                marginTop: '8px'
+                            }}>
+                                {getAuthMessage().subMessage}
+                            </Text>
+                        </div>
+                    )}
+
                     {/* Bouton de connexion Microsoft */}
                     <Button
                         onClick={handleMicrosoftLogin}
@@ -192,20 +296,21 @@ const LoginForm: React.FC = () => {
                         size="large"
                         loading={localLoading}
                         disabled={isLoading}
+                        className="auth-login-button"
                         style={{
                             width: '100%',
                             height: '56px',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            background: '#0078d4',
-                            borderColor: '#0078d4',
+                            background: localLoading ? '#52c41a' : '#0078d4',
+                            borderColor: localLoading ? '#52c41a' : '#0078d4',
                             color: 'white',
                             fontWeight: '600',
                             fontSize: '16px',
                             borderRadius: '12px',
                             border: 'none',
-                            boxShadow: '0 4px 12px rgba(0, 120, 212, 0.3)',
+                            boxShadow: localLoading ? '0 4px 12px rgba(82, 196, 26, 0.3)' : '0 4px 12px rgba(0, 120, 212, 0.3)',
                             transition: 'all 0.3s ease'
                         }}
                         onMouseOver={(e) => {
@@ -216,12 +321,17 @@ const LoginForm: React.FC = () => {
                             }
                         }}
                         onMouseOut={(e) => {
-                            e.currentTarget.style.background = '#0078d4';
-                            e.currentTarget.style.transform = 'translateY(0)';
-                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 120, 212, 0.3)';
+                            if (!localLoading) {
+                                e.currentTarget.style.background = '#0078d4';
+                                e.currentTarget.style.transform = 'translateY(0)';
+                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 120, 212, 0.3)';
+                            }
                         }}
                     >
-                        {localLoading ? 'Connexion en cours...' : 'Se connecter avec Microsoft'}
+                        {localLoading ? 
+                            (authStep === 'redirecting' ? 'Redirection...' : 'Connexion en cours...') : 
+                            'Se connecter avec Microsoft'
+                        }
                     </Button>
                 </Space>
 
@@ -265,6 +375,8 @@ const LoginForm: React.FC = () => {
                     </Text>
                 </div>
             </Card>
+
+
         </div>
     );
 };

@@ -134,6 +134,33 @@ const FileSelectionStep: React.FC<FileSelectionStepProps> = ({
         });
     };
 
+    // Convertir le type MIME en nom lisible
+    const getReadableFileType = (file: File): string => {
+        const mimeType = file.type;
+        const extension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+
+        // Priorité à l'extension si le type MIME est complexe
+        switch (extension) {
+            case '.xlsx':
+            case '.xls':
+                return 'Excel';
+            case '.csv':
+                return 'CSV';
+            default:
+                // Fallback sur le type MIME si nécessaire
+                switch (mimeType) {
+                    case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+                        return 'Excel';
+                    case 'application/vnd.ms-excel':
+                        return 'Excel';
+                    case 'text/csv':
+                        return 'CSV';
+                    default:
+                        return mimeType || 'Non spécifié';
+                }
+        }
+    };
+
     // Obtenir les informations du fichier pour l'affichage
     const getFileInfo = () => {
         if (!wizardData.selectedFile) return null;
@@ -142,7 +169,7 @@ const FileSelectionStep: React.FC<FileSelectionStepProps> = ({
         return {
             name: file.name,
             size: (file.size / 1024).toFixed(1) + ' KB',
-            type: file.type || 'Non spécifié',
+            type: getReadableFileType(file),
             lastModified: new Date(file.lastModified).toLocaleString()
         };
     };

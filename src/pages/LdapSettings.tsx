@@ -19,6 +19,7 @@ import {
 } from 'antd';
 import {LdapSettings} from '../models/ApplicationSettings';
 import {useSettings} from '../hooks/useSettings';
+import activeDirectoryService from '../services/api/activeDirectoryService';
 
 import {
     CheckCircleOutlined,
@@ -52,8 +53,7 @@ const LdapSettingsPage: React.FC = () => {
         LdapUsername: '',
         LdapPassword: '',
         LdapSsl: false,
-        LdapPageSize: 500,
-        netBiosDomainName: ''
+        LdapPageSize: 500
     };
 
     const {
@@ -63,38 +63,39 @@ const LdapSettingsPage: React.FC = () => {
         loading,
         error,
         reload
-    } = useSettings<LdapSettings>('ldap');
+    } = useSettings<any>('ldap');
 
     useEffect(() => {
-        console.log('[LdapSettings] useEffect triggered with settings:', settings);
         if (settings) {
-            console.log('[LdapSettings] Setting form values with settings:', settings);
-            
-            // Normaliser les données du backend (camelCase) vers le format frontend (PascalCase)
-            const normalizedSettings = {
+            // Le backend peut retourner en camelCase ou PascalCase, normaliser vers PascalCase pour le frontend
+            const normalizedSettings: LdapSettings = {
                 LdapServer: settings.ldapServer || settings.LdapServer || '',
                 LdapDomain: settings.ldapDomain || settings.LdapDomain || '',
                 LdapPort: settings.ldapPort || settings.LdapPort || 389,
                 LdapBaseDn: settings.ldapBaseDn || settings.LdapBaseDn || '',
                 LdapUsername: settings.ldapUsername || settings.LdapUsername || '',
                 LdapPassword: settings.ldapPassword || settings.LdapPassword || '',
-                LdapSsl: settings.ldapSsl !== undefined ? settings.ldapSsl : (settings.LdapSsl || false),
-                LdapPageSize: settings.ldapPageSize || settings.LdapPageSize || 500,
-                netBiosDomainName: settings.netBiosDomainName || settings.NetBiosDomainName || ''
+                LdapSsl: Boolean(settings.ldapSsl !== undefined ? settings.ldapSsl : settings.LdapSsl),
+                LdapPageSize: settings.ldapPageSize || settings.LdapPageSize || 500
             };
             
-            console.log('[LdapSettings] Normalized settings for form:', normalizedSettings);
             form.setFieldsValue(normalizedSettings);
-            setSslEnabled(normalizedSettings.LdapSsl || false);
+            setSslEnabled(normalizedSettings.LdapSsl);
             setHasChanges(false);
         } else {
-            console.log('[LdapSettings] No settings, using default values');
-            // Si pas de settings du serveur, utiliser les valeurs par défaut vides
             form.setFieldsValue(defaultSettings);
             setSslEnabled(false);
             setHasChanges(false);
         }
     }, [settings, form]);
+
+    // Surveiller les changements des valeurs du formulaire pour s'assurer que le Switch se met à jour
+    useEffect(() => {
+        const currentValues = form.getFieldsValue();
+        if (currentValues.LdapSsl !== sslEnabled) {
+            setSslEnabled(currentValues.LdapSsl);
+        }
+    }, [form, sslEnabled]);
 
     const onFinish = async (values: LdapSettings) => {
         try {
@@ -136,10 +137,12 @@ const LdapSettingsPage: React.FC = () => {
     const handleFormChange = (changedValues: any, allValues: any) => {
         setHasChanges(true);
         
-        // Mettre à jour l'état SSL si le champ LdapSsl change
+        // Mettre à jour l'état SSL basé sur la valeur actuelle du formulaire
         if (changedValues.LdapSsl !== undefined) {
             setSslEnabled(changedValues.LdapSsl);
-            console.log('[LdapSettings] SSL state changed to:', changedValues.LdapSsl);
+        } else if (allValues.LdapSsl !== undefined) {
+            // S'assurer que l'état SSL reste synchronisé même si ce n'est pas LdapSsl qui a changé
+            setSslEnabled(allValues.LdapSsl);
         }
     };
 
@@ -147,12 +150,25 @@ const LdapSettingsPage: React.FC = () => {
         try {
             setTestingConnection(true);
             message.loading('Test de connexion LDAP en cours...', 0);
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            const result = await activeDirectoryService.testConnection();
             message.destroy();
-            message.success('Connexion LDAP établie avec succès !');
+            
+            if (result.isHealthy) {
+                message.success('Connexion LDAP établie avec succès !');
+                if (result.details) {
+                    console.log('Détails de la connexion LDAP:', result.details);
+                }
+            } else {
+                message.error('Échec de la connexion LDAP. Vérifiez vos paramètres.');
+                if (result.details) {
+                    console.error('Détails de l\'erreur LDAP:', result.details);
+                }
+            }
         } catch (error) {
             message.destroy();
-            message.error('Échec de la connexion LDAP. Vérifiez vos paramètres.');
+            message.error('Erreur lors du test de connexion LDAP.');
+            console.error('Erreur test LDAP:', error);
         } finally {
             setTestingConnection(false);
         }
@@ -162,21 +178,20 @@ const LdapSettingsPage: React.FC = () => {
     const currentSettings = settings || defaultSettings;
 
     // Debug - log des données reçues
-    console.log('[LdapSettings] settings from useSettings:', settings);
-    console.log('[LdapSettings] loading:', loading);
-    console.log('[LdapSettings] error:', error);
-    console.log('[LdapSettings] currentSettings:', currentSettings);
+
 
     const getConfigStatus = () => {
         if (loading) return {status: 'loading', color: '#6b7280', text: 'Chargement...'};
 
-        // Gérer à la fois PascalCase (LdapServer) et camelCase (ldapServer) du backend
-        const hasServer = (currentSettings.LdapServer || currentSettings.ldapServer) && 
-                          (currentSettings.LdapServer?.trim() || currentSettings.ldapServer?.trim()) !== '';
-        const hasBaseDn = (currentSettings.LdapBaseDn || currentSettings.ldapBaseDn) && 
-                          (currentSettings.LdapBaseDn?.trim() || currentSettings.ldapBaseDn?.trim()) !== '';
-        const hasCredentials = (currentSettings.LdapUsername || currentSettings.ldapUsername) && 
-                               (currentSettings.LdapPassword || currentSettings.ldapPassword);
+        if (!settings) return {status: 'incomplete', color: '#dc2626', text: 'Configuration incomplète'};
+
+        // Gérer à la fois PascalCase et camelCase du backend
+        const hasServer = (settings.LdapServer || settings.ldapServer) && 
+                          (settings.LdapServer?.trim() || settings.ldapServer?.trim()) !== '';
+        const hasBaseDn = (settings.LdapBaseDn || settings.ldapBaseDn) && 
+                          (settings.LdapBaseDn?.trim() || settings.ldapBaseDn?.trim()) !== '';
+        const hasCredentials = (settings.LdapUsername || settings.ldapUsername) && 
+                               (settings.LdapPassword || settings.ldapPassword);
 
         const completedFields = [hasServer, hasBaseDn, hasCredentials].filter(Boolean).length;
 
@@ -191,7 +206,7 @@ const LdapSettingsPage: React.FC = () => {
 
     const configStatus = getConfigStatus();
 
-    console.log('[LdapSettings] SSL enabled state for badge:', sslEnabled);
+
 
     return (
         <div>
@@ -243,8 +258,7 @@ const LdapSettingsPage: React.FC = () => {
                                             LdapUsername: 'admin',
                                             LdapPassword: 'password123',
                                             LdapSsl: false,
-                                            LdapPageSize: 500,
-                                            netBiosDomainName: 'DOMAIN'
+                                            LdapPageSize: 500
                                         };
                                         form.setFieldsValue(exampleSettings);
                                         setSslEnabled(exampleSettings.LdapSsl);
@@ -372,19 +386,6 @@ const LdapSettingsPage: React.FC = () => {
                                     />
                                 </Form.Item>
 
-                                <Form.Item
-                                    label="Nom NetBIOS du domaine"
-                                    name="netBiosDomainName"
-                                    rules={[{required: true, message: 'Nom NetBIOS du domaine requis'}]}
-                                    tooltip="Nom NetBIOS du domaine Active Directory (ex: DOMAIN)"
-                                >
-                                    <Input
-                                        placeholder="DOMAIN ou domain.local"
-                                        prefix={<CloudServerOutlined style={{color: '#6b7280'}}/>}
-                                        size="large"
-                                    />
-                                </Form.Item>
-
                                 <Row gutter={16}>
                                     <Col span={16}>
                                         <Form.Item
@@ -408,9 +409,14 @@ const LdapSettingsPage: React.FC = () => {
                                             valuePropName="checked"
                                             tooltip="Activer SSL/TLS"
                                         >
-                                            <div style={{marginTop: 8}}>
-                                                <Switch size="default"/>
-                                            </div>
+                                            <Switch 
+                                                size="default"
+                                                checked={sslEnabled}
+                                                onChange={(checked) => {
+                                                    form.setFieldValue('LdapSsl', checked);
+                                                    setSslEnabled(checked);
+                                                }}
+                                            />
                                         </Form.Item>
                                     </Col>
                                 </Row>

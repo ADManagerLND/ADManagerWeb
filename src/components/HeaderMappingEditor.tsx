@@ -268,12 +268,6 @@ const HeaderMappingEditor: React.FC<HeaderMappingEditorProps> = ({value = {}, on
                     <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
                         Ajouter un mappage
                     </Button>
-                    <Button onClick={() => handleLoadPreset('lycee')}>
-                        Modèle Lycée
-                    </Button>
-                    <Button onClick={() => handleLoadPreset('entreprise')}>
-                        Modèle Entreprise
-                    </Button>
                     <Button 
                         icon={<EyeOutlined />} 
                         onClick={() => setShowPreview(!showPreview)}

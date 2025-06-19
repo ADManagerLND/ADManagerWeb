@@ -136,21 +136,38 @@ export const csvImportService = {
             };
 
             this._boundImportCompleteHandler = (data: any) => {
+                console.log('[CsvImportService] === DÉBUT DEBUG GLOBAL HANDLER ===');
                 console.log('[CsvImportService] Événement IMPORT_COMPLETE reçu (global handler):', data);
-                const serverData = data?.Data || {};
+                console.log('[CsvImportService] Type de data (global):', typeof data);
+                console.log('[CsvImportService] Keys de data (global):', data ? Object.keys(data) : 'N/A');
+                console.log('[CsvImportService] data.data (global):', data?.data);
+                
+                const serverData = data?.data || data?.Data || data || {};
 
+                // Mapping correct des données depuis le backend
                 const frontendResult: ImportResult = {
-                    success: serverData.success || false,
-                    summary: serverData.summary || {...DEFAULT_IMPORT_SUMMARY},
-                    details: serverData.actionResults || serverData.details || []
+                    success: serverData.success !== undefined ? serverData.success : true,
+                    summary: serverData.summary || {
+                        totalObjects: serverData.totalActions || serverData.processedCount || 0,
+                        createCount: serverData.createCount || 0,
+                        updateCount: serverData.updateCount || 0,
+                        deleteCount: serverData.deleteCount || 0,
+                        moveCount: serverData.moveCount || 0,
+                        errorCount: serverData.errorCount || 0,
+                        createOUCount: serverData.createOUCount || 0,
+                        processedCount: serverData.processedCount || 0
+                    },
+                    details: serverData.details || serverData.results || []
                 };
+
+                console.log('[CsvImportService] Résultat mappé pour le frontend:', frontendResult);
 
                 const progressEvent: ImportProgress = {
                     progress: 100,
                     status: 'completed',
-                    message: serverData.success
+                    message: frontendResult.success
                         ? 'Import terminé avec succès.'
-                        : (serverData.summary?.errorCount > 0 ? 'Import terminé avec des erreurs.' : 'Import terminé.'),
+                        : (frontendResult.summary?.errorCount > 0 ? 'Import terminé avec des erreurs.' : 'Import terminé.'),
                     result: frontendResult
                 };
                 this._progressHandlers.forEach(handler => handler(progressEvent));
@@ -288,6 +305,23 @@ export const csvImportService = {
         }
     },
 
+    // Extraire le connectionId depuis l'URL WebSocket des logs ou une autre méthode
+    _extractConnectionIdFromUrl: function (): string | null {
+        try {
+            // Tenter de récupérer le connectionId depuis la connexion SignalR
+            const connection = this._signalRService.getHubConnection(HUB_NAME);
+            if (connection && (connection as any).connectionId) {
+                return (connection as any).connectionId;
+            }
+            
+            // Si pas disponible, générer un ID temporaire basé sur la timestamp
+            return null;
+        } catch (error) {
+            console.warn('[CsvImportService] Impossible d\'extraire le connectionId:', error);
+            return null;
+        }
+    },
+
     // Vérifier et assurer la connexion SignalR
     _ensureSignalRConnection: async function (): Promise<signalR.HubConnection> {
         let connection = this._signalRService.getHubConnection(HUB_NAME);
@@ -351,7 +385,10 @@ export const csvImportService = {
         try {
             // 1) Connexion SignalR
             const conn = await this._ensureSignalRConnection();
-            this._connectionId = conn.connectionId;
+            
+            // ✅ CORRECTION: Le connectionId n'est pas directement accessible sur HubConnection
+            // On va utiliser une approche différente pour récupérer le connectionId
+            this._connectionId = this._extractConnectionIdFromUrl() || 'temp-' + Date.now();
 
             // 2) Authentification
             const authService = (await import('./auth/authService')).default;
@@ -374,7 +411,10 @@ export const csvImportService = {
             // On utilise un endpoint qui upload seulement sans analyser
             const fd = new FormData();
             fd.append('file', file, file.name);
-            if (this._connectionId) fd.append('connectionId', this._connectionId);
+            
+            // ✅ CORRECTION TEMPORAIRE: Ne pas envoyer de connectionId, laisser le serveur en générer un
+            // Le serveur va générer un connectionId temporaire et l'analyse utilisera le vrai connectionId SignalR
+            // fd.append('connectionId', this._connectionId);
             
             // Upload du fichier sans configuration pour éviter l'analyse automatique
             await httpService.post(`${API_CONFIG.BASE_URL}/api/import/upload-file-only`, fd, {timeout: FILE_UPLOAD_TIMEOUT});
@@ -399,13 +439,11 @@ export const csvImportService = {
             const e = err as Error & { code?: string };
             const msg = e.message ?? 'Erreur inconnue';
             
-            // Si l'endpoint upload-file-only n'existe pas, fallback vers l'ancienne méthode
+            // Fallback vers l'ancienne méthode pour tous les cas d'erreur temporairement
             if (err && typeof err === 'object' && 'response' in err) {
                 const response = (err as any).response;
-                if (response?.status === 404) {
-                    console.log('[CsvImportService] Fallback vers upload-file classique + StartAnalysis');
-                    return await this._uploadAndAnalyzeCsvWithConfigFallback(file, config);
-                }
+                console.log(`[CsvImportService] Erreur ${response?.status || 'inconnue'}, fallback vers upload-file classique + StartAnalysis`);
+                return await this._uploadAndAnalyzeCsvWithConfigFallback(file, config);
             }
             
             this._progressHandlers.forEach(h => h({progress: 0, status: 'error', message: msg}));
@@ -532,17 +570,18 @@ export const csvImportService = {
                     this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
 
                     const result: ImportResult = {
-                        success: true,
-                        summary: {
-                            totalObjects: data?.Data?.totalProcessed || actions.length,
-                            createCount: data?.Data?.createdCount || 0,
-                            updateCount: data?.Data?.updatedCount || 0,
-                            deleteCount: data?.Data?.deletedCount || 0,
-                            moveCount: data?.Data?.movedCount || 0,
+                        success: data?.Data?.success || true,
+                        summary: data?.Data?.summary || {
+                            totalObjects: data?.Data?.totalProcessed || data?.Data?.totalActions || actions.length,
+                            createCount: data?.Data?.createCount || 0,
+                            updateCount: data?.Data?.updateCount || 0,
+                            deleteCount: data?.Data?.deleteCount || 0,
+                            moveCount: data?.Data?.moveCount || 0,
                             errorCount: data?.Data?.errorCount || 0,
-                            createOUCount: data?.Data?.createdOUCount || 0
+                            createOUCount: data?.Data?.createOUCount || 0,
+                            processedCount: data?.Data?.processedCount || 0
                         },
-                        details: data?.Data?.actionResults || []
+                        details: data?.Data?.details || data?.Data?.results || []
                     };
 
                     resolve(result);
@@ -694,23 +733,32 @@ export const csvImportService = {
 
                 // Gestionnaire pour l'événement d'import terminé
                 const completeHandler = (data: any) => {
+                    console.log('[CsvImportService] === DÉBUT DEBUG executeDirectImport ===');
                     console.log('[CsvImportService] Import terminé via SignalR:', data);
+                    console.log('[CsvImportService] Type de data:', typeof data);
+                    console.log('[CsvImportService] Keys de data:', data ? Object.keys(data) : 'N/A');
+                    console.log('[CsvImportService] data.data:', data?.data);
+                    console.log('[CsvImportService] Type de data.data:', typeof data?.data);
+                    console.log('[CsvImportService] Keys de data.data:', data?.data ? Object.keys(data?.data) : 'N/A');
+                    
                     clearTimeout(timeoutId);
                     this._signalRService.offEvent(HUB_NAME, 'IMPORT_COMPLETE', completeHandler);
                     this._signalRService.offEvent(HUB_NAME, 'IMPORT_ERROR', errorHandler);
 
+                    const serverData = data?.data || data?.Data || data || {};
                     const result: ImportResult = {
-                        success: true,
-                        summary: {
-                            totalObjects: data?.Data?.totalProcessed || csvData.length,
-                            createCount: data?.Data?.createdCount || 0,
-                            updateCount: data?.Data?.updatedCount || 0,
-                            deleteCount: data?.Data?.deletedCount || 0,
-                            moveCount: data?.Data?.movedCount || 0,
-                            errorCount: data?.Data?.errorCount || 0,
-                            createOUCount: data?.Data?.createdOUCount || 0
+                        success: serverData?.success || true,
+                        summary: serverData?.summary || {
+                            totalObjects: serverData?.totalProcessed || serverData?.totalActions || csvData.length,
+                            createCount: serverData?.createCount || 0,
+                            updateCount: serverData?.updateCount || 0,
+                            deleteCount: serverData?.deleteCount || 0,
+                            moveCount: serverData?.moveCount || 0,
+                            errorCount: serverData?.errorCount || 0,
+                            createOUCount: serverData?.createOUCount || 0,
+                            processedCount: serverData?.processedCount || 0
                         },
-                        details: data?.Data?.actionResults || []
+                        details: serverData?.details || serverData?.results || []
                     };
 
                     resolve(result);

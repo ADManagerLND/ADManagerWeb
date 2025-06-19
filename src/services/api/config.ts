@@ -4,8 +4,8 @@ import apiConfigurationService from '../apiConfiguration';
 const ENV = import.meta.env.VITE_APP_ENV || 'development';
 
 // Configuration Azure AD
-const TENANT_ID = import.meta.env.VITE_AZURE_TENANT_ID || "a70e01a3-ae69-4d17-ad6d-407f168bb45e";
-const CLIENT_ID = import.meta.env.VITE_AZURE_CLIENT_ID || "114717d2-5cae-4569-900a-efa4e58eb3f5";
+const TENANT_ID = import.meta.env.VITE_AZURE_TENANT_ID;
+const CLIENT_ID = import.meta.env.VITE_AZURE_CLIENT_ID;
 
 // Configuration du backend - utilise l'IP configurée ou les variables d'environnement en fallback
 const getApiBaseUrl = (): string => {
@@ -64,7 +64,8 @@ const ENDPOINTS = {
         CHILDREN: '/api/activedirectory/children',
         SEARCH: '/api/activedirectory/search',
         BULK_ACTION: '/api/activedirectory/bulkAction',
-        USER: '/api/activedirectory/user'
+        USER: '/api/activedirectory/user',
+        HEALTH: '/api/activedirectory/health'
     }
 };
 

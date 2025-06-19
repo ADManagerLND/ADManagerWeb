@@ -142,6 +142,11 @@ const ImportExecutionStep: React.FC<ImportExecutionStepProps> = ({
             );
 
             console.log('[ImportExecutionStep] ✅ Résultat de executeDirectImport:', result);
+            console.log('[ImportExecutionStep] Type de result:', typeof result);
+            console.log('[ImportExecutionStep] Keys de result:', result ? Object.keys(result) : 'N/A');
+            console.log('[ImportExecutionStep] result.summary:', result?.summary);
+            console.log('[ImportExecutionStep] result.details:', result?.details);
+            
             updateWizardData({importResult: result});
 
         } catch (error: any) {
