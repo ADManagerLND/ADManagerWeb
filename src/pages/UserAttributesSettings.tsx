@@ -2,6 +2,7 @@
 import React, {useEffect, useState} from 'react';
 import {
     Alert,
+    Avatar,
     Badge,
     Button,
     Card,
@@ -10,6 +11,7 @@ import {
     Input,
     List,
     message,
+    Modal,
     Popconfirm,
     Row,
     Select,
@@ -39,12 +41,34 @@ import {
 const {Text} = Typography;
 const {Option} = Select;
 
+// Conversion du modèle Frontend (TS) vers Backend (C#)
+const toApiAttribute = (attr: UserAttribute) => ({
+    name: attr.name,
+    description: attr.description,
+    syntax: attr.dataType === 'array' ? 'String[]' : attr.dataType,
+    isRequired: attr.isRequired,
+});
+
+// Conversion du modèle Backend (C#) vers Frontend (TS)
+const fromApiAttribute = (apiAttr: any): UserAttribute => ({
+    id: apiAttr.name,
+    name: apiAttr.name,
+    displayName: apiAttr.displayName || apiAttr.name,
+    description: apiAttr.description,
+    dataType: apiAttr.syntax === 'String[]' ? 'array' : apiAttr.syntax,
+    isRequired: apiAttr.isRequired,
+    isEditable: apiAttr.isEditable !== false,
+    isVisible: apiAttr.isVisible !== false,
+    isSearchable: apiAttr.isSearchable !== false,
+});
+
 const UserAttributesSettingsPage: React.FC = () => {
     const [attributes, setAttributes] = useState<UserAttribute[]>([]);
     const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<Error | null>(null);
-    const [hasChanges, setHasChanges] = useState(false);
+    const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+    const [editingAttribute, setEditingAttribute] = useState<UserAttribute | null>(null);
 
     const loadAttributes = async () => {
         try {
@@ -52,11 +76,10 @@ const UserAttributesSettingsPage: React.FC = () => {
             setError(null);
             const data = await configService.getUserAttributes();
             if (Array.isArray(data)) {
-                setAttributes(data);
+                setAttributes(data.map(fromApiAttribute));
             } else {
                 setAttributes([]);
             }
-            setHasChanges(false);
         } catch (err: any) {
             setError(err);
             message.error('Erreur lors du chargement des attributs utilisateur');
@@ -70,9 +93,24 @@ const UserAttributesSettingsPage: React.FC = () => {
         loadAttributes();
     }, []);
 
-    const addAttribute = (values: any) => {
+    const saveAllAttributes = async (updatedAttributes: UserAttribute[]) => {
+        try {
+            setLoading(true);
+            const apiAttributes = updatedAttributes.map(toApiAttribute);
+            await configService.updateUserAttributes(apiAttributes);
+            message.success('Attributs mis à jour avec succès');
+            // Recharger pour être sûr d'avoir l'état du serveur
+            await loadAttributes();
+        } catch (err: any) {
+            message.error('Erreur lors de la mise à jour des attributs');
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    const addAttribute = async (values: any) => {
         const newAttribute: UserAttribute = {
-            id: Date.now().toString(),
+            id: values.name,
             name: values.name,
             displayName: values.displayName || values.name,
             description: values.description || '',
@@ -80,34 +118,51 @@ const UserAttributesSettingsPage: React.FC = () => {
             isRequired: values.isRequired || false,
             isEditable: values.isEditable !== false,
             isVisible: values.isVisible !== false,
-            isSearchable: values.isSearchable !== false
+            isSearchable: values.isSearchable !== false,
         };
 
-        setAttributes([...attributes, newAttribute]);
-        setHasChanges(true);
+        const updatedAttributes = [...attributes, newAttribute];
+        setAttributes(updatedAttributes);
+        await saveAllAttributes(updatedAttributes);
         form.resetFields();
-        message.success('Attribut ajouté avec succès');
     };
 
-    const removeAttribute = (index: number) => {
-        const newAttributes = attributes.filter((_, i) => i !== index);
-        setAttributes(newAttributes);
-        setHasChanges(true);
-        message.success('Attribut supprimé');
+    const removeAttribute = async (id: string) => {
+        const updatedAttributes = attributes.filter(attr => attr.id !== id);
+        setAttributes(updatedAttributes);
+        await saveAllAttributes(updatedAttributes);
     };
 
-    const saveAttributes = async () => {
-        try {
-            setLoading(true);
-            await configService.updateUserAttributes(attributes);
-            message.success('Attributs utilisateur mis à jour avec succès');
-            setHasChanges(false);
-            loadAttributes();
-        } catch (err: any) {
-            message.error('Erreur lors de la mise à jour des attributs utilisateur');
-        } finally {
-            setLoading(false);
-        }
+    const showEditModal = (attribute: UserAttribute) => {
+        setEditingAttribute(attribute);
+        form.setFieldsValue(attribute);
+        setIsEditModalVisible(true);
+    };
+
+    const handleUpdate = async (values: any) => {
+        if (!editingAttribute) return;
+
+        const updatedAttribute: UserAttribute = {
+            ...editingAttribute,
+            ...values,
+        };
+
+        const updatedList = attributes.map(attr =>
+            attr.id === editingAttribute.id ? updatedAttribute : attr
+        );
+
+        setAttributes(updatedList);
+        await saveAllAttributes(updatedList);
+
+        setIsEditModalVisible(false);
+        setEditingAttribute(null);
+        form.resetFields();
+    };
+
+    const handleCancel = () => {
+        setIsEditModalVisible(false);
+        setEditingAttribute(null);
+        form.resetFields();
     };
 
     const handleReload = () => {
@@ -245,8 +300,8 @@ const UserAttributesSettingsPage: React.FC = () => {
                                     icon={<CheckCircleOutlined/>}
                                     onClick={() => {
                                         setAttributes(DEFAULT_USER_ATTRIBUTES);
-                                        setHasChanges(true);
-                                        message.success('Attributs par défaut chargés');
+                                        saveAllAttributes(DEFAULT_USER_ATTRIBUTES);
+                                        message.success('Attributs par défaut chargés et sauvegardés');
                                     }}
                                     disabled={loading}
                                     style={{
@@ -265,184 +320,22 @@ const UserAttributesSettingsPage: React.FC = () => {
                             >
                                 Actualiser
                             </Button>
-                            <Button
-                                type="primary"
-                                icon={<SaveOutlined/>}
-                                onClick={saveAttributes}
-                                loading={loading}
-                                disabled={!hasChanges}
-                                style={{
-                                    background: hasChanges ? '#d97706' : undefined,
-                                    borderColor: hasChanges ? '#d97706' : undefined
-                                }}
-                            >
-                                {hasChanges ? 'Enregistrer' : 'Sauvegardé'}
-                            </Button>
                         </Space>
                     </Col>
                 </Row>
             </Card>
 
-            {/* Alertes */}
             {error && (
                 <Alert
-                    message="Erreur de chargement"
-                    description="Impossible de charger les attributs utilisateur. Attributs par défaut chargés."
-                    type="warning"
+                    message="Erreur"
+                    description={error.message}
+                    type="error"
                     showIcon
-                    style={{marginBottom: 24, borderRadius: '8px'}}
-                />
-            )}
-
-            {hasChanges && (
-                <Alert
-                    message="Modifications non sauvegardées"
-                    description="N'oubliez pas d'enregistrer vos changements."
-                    type="warning"
-                    showIcon
-                    style={{marginBottom: 24, borderRadius: '8px'}}
+                    style={{marginBottom: '1rem'}}
                 />
             )}
 
             <Row gutter={[24, 24]}>
-                {/* Formulaire d'ajout */}
-                <Col xs={24} lg={8}>
-                    <Card
-                        title={
-                            <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
-                                <PlusOutlined style={{color: '#d97706'}}/>
-                                <span>Ajouter un attribut</span>
-                            </div>
-                        }
-                        style={{
-                            borderRadius: '12px',
-                            border: '1px solid #e8e8e8',
-                            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)'
-                        }}
-                        bodyStyle={{padding: '24px'}}
-                    >
-                        <Form
-                            form={form}
-                            layout="vertical"
-                            onFinish={addAttribute}
-                        >
-                            <Form.Item
-                                label="Nom technique"
-                                name="name"
-                                rules={[{required: true, message: 'Nom requis'}]}
-                                tooltip="Nom de l'attribut tel qu'il apparaît dans Active Directory"
-                            >
-                                <Input
-                                    placeholder="ex: department"
-                                    size="large"
-                                />
-                            </Form.Item>
-
-                            <Form.Item
-                                label="Nom d'affichage"
-                                name="displayName"
-                                tooltip="Nom convivial affiché dans l'interface"
-                            >
-                                <Input
-                                    placeholder="ex: Département"
-                                    size="large"
-                                />
-                            </Form.Item>
-
-                            <Form.Item
-                                label="Description"
-                                name="description"
-                                tooltip="Description détaillée de l'attribut"
-                            >
-                                <Input.TextArea
-                                    placeholder="Description de l'attribut..."
-                                    rows={3}
-                                />
-                            </Form.Item>
-
-                            <Form.Item
-                                label="Type de données"
-                                name="dataType"
-                                initialValue="string"
-                            >
-                                <Select size="large">
-                                    <Option value="string">Texte</Option>
-                                    <Option value="number">Nombre</Option>
-                                    <Option value="boolean">Booléen</Option>
-                                    <Option value="date">Date</Option>
-                                    <Option value="array">Tableau</Option>
-                                </Select>
-                            </Form.Item>
-
-                            <Row gutter={16}>
-                                <Col span={12}>
-                                    <Form.Item
-                                        label="Requis"
-                                        name="isRequired"
-                                        valuePropName="checked"
-                                        tooltip="Attribut obligatoire"
-                                    >
-                                        <Switch/>
-                                    </Form.Item>
-                                </Col>
-                                <Col span={12}>
-                                    <Form.Item
-                                        label="Éditable"
-                                        name="isEditable"
-                                        valuePropName="checked"
-                                        initialValue={true}
-                                        tooltip="Peut être modifié"
-                                    >
-                                        <Switch/>
-                                    </Form.Item>
-                                </Col>
-                            </Row>
-
-                            <Row gutter={16}>
-                                <Col span={12}>
-                                    <Form.Item
-                                        label="Visible"
-                                        name="isVisible"
-                                        valuePropName="checked"
-                                        initialValue={true}
-                                        tooltip="Affiché dans l'interface"
-                                    >
-                                        <Switch/>
-                                    </Form.Item>
-                                </Col>
-                                <Col span={12}>
-                                    <Form.Item
-                                        label="Recherchable"
-                                        name="isSearchable"
-                                        valuePropName="checked"
-                                        initialValue={true}
-                                        tooltip="Utilisable pour la recherche"
-                                    >
-                                        <Switch/>
-                                    </Form.Item>
-                                </Col>
-                            </Row>
-
-                            <Form.Item>
-                                <Button
-                                    type="primary"
-                                    htmlType="submit"
-                                    icon={<PlusOutlined/>}
-                                    size="large"
-                                    block
-                                    style={{
-                                        background: '#d97706',
-                                        borderColor: '#d97706'
-                                    }}
-                                >
-                                    Ajouter l'attribut
-                                </Button>
-                            </Form.Item>
-                        </Form>
-                    </Card>
-                </Col>
-
-                {/* Liste des attributs */}
                 <Col xs={24} lg={16}>
                     <Card
                         title={
@@ -473,13 +366,14 @@ const UserAttributesSettingsPage: React.FC = () => {
                                                 <Button
                                                     type="text"
                                                     icon={<EditOutlined/>}
+                                                    onClick={() => showEditModal(item)}
                                                     disabled={!item.isEditable}
                                                 />
                                             </Tooltip>,
                                             <Popconfirm
                                                 title="Supprimer cet attribut ?"
                                                 description="Cette action est irréversible."
-                                                onConfirm={() => removeAttribute(index)}
+                                                onConfirm={() => removeAttribute(item.id)}
                                                 key="delete"
                                             >
                                                 <Button
@@ -524,23 +418,6 @@ const UserAttributesSettingsPage: React.FC = () => {
                                                     <div style={{color: '#374151', marginBottom: 8, fontSize: '14px'}}>
                                                         {item.description}
                                                     </div>
-                                                    <Space size="small" wrap>
-                                                        {item.isVisible && (
-                                                            <Tag color="#059669">
-                                                                <EyeOutlined/> Visible
-                                                            </Tag>
-                                                        )}
-                                                        {item.isSearchable && (
-                                                            <Tag color="#0078d4">
-                                                                <SearchOutlined/> Recherchable
-                                                            </Tag>
-                                                        )}
-                                                        {item.isEditable && (
-                                                            <Tag color="#7c3aed">
-                                                                <EditOutlined/> Éditable
-                                                            </Tag>
-                                                        )}
-                                                    </Space>
                                                 </div>
                                             }
                                         />
@@ -550,7 +427,106 @@ const UserAttributesSettingsPage: React.FC = () => {
                         </Spin>
                     </Card>
                 </Col>
+                <Col xs={24} lg={8}>
+                    <Card
+                        title={
+                            <Space>
+                                <PlusOutlined/>
+                                Ajouter un nouvel attribut
+                            </Space>
+                        }
+                    >
+                        <Form form={form} layout="vertical" onFinish={addAttribute}>
+                            <Form.Item
+                                name="name"
+                                label="Nom de l'attribut (LDAP)"
+                                rules={[{required: true, message: 'Le nom LDAP est requis'}]}
+                            >
+                                <Input placeholder="ex: sAMAccountName"/>
+                            </Form.Item>
+                            <Form.Item name="displayName" label="Nom d'affichage">
+                                <Input placeholder="ex: Nom de compte"/>
+                            </Form.Item>
+                            <Form.Item name="description" label="Description">
+                                <Input.TextArea rows={2} placeholder="Description de l'attribut"/>
+                            </Form.Item>
+                            <Form.Item name="dataType" label="Type de donnée" initialValue="string">
+                                <Select>
+                                    <Option value="string">Texte (String)</Option>
+                                    <Option value="number">Nombre (Number)</Option>
+                                    <Option value="boolean">Booléen (Boolean)</Option>
+                                    <Option value="date">Date</Option>
+                                    <Option value="array">Tableau (Array)</Option>
+                                </Select>
+                            </Form.Item>
+                            <Form.Item>
+                                <Space direction="vertical">
+                                    <Form.Item name="isRequired" valuePropName="checked" noStyle>
+                                        <Switch/>
+                                    </Form.Item>
+                                    <Text>Est requis pour la création d'un utilisateur</Text>
+                                </Space>
+                            </Form.Item>
+                            <Form.Item>
+                                <Button type="primary" htmlType="submit" block loading={loading}>
+                                    Ajouter et Sauvegarder
+                                </Button>
+                            </Form.Item>
+                        </Form>
+                    </Card>
+                </Col>
             </Row>
+
+            <Modal
+                title="Modifier l'attribut"
+                visible={isEditModalVisible}
+                onCancel={handleCancel}
+                footer={null}
+                destroyOnClose
+            >
+                <Form
+                    form={form}
+                    layout="vertical"
+                    onFinish={handleUpdate}
+                    initialValues={editingAttribute || {}}
+                >
+                    <Form.Item
+                        name="name"
+                        label="Nom de l'attribut (LDAP)"
+                        rules={[{required: true, message: 'Le nom LDAP est requis'}]}
+                    >
+                        <Input placeholder="ex: sAMAccountName" disabled/>
+                    </Form.Item>
+                    <Form.Item name="displayName" label="Nom d'affichage">
+                        <Input placeholder="ex: Nom de compte"/>
+                    </Form.Item>
+                    <Form.Item name="description" label="Description">
+                        <Input.TextArea rows={2} placeholder="Description de l'attribut"/>
+                    </Form.Item>
+                    <Form.Item name="dataType" label="Type de donnée">
+                        <Select>
+                            <Option value="string">Texte (String)</Option>
+                            <Option value="number">Nombre (Number)</Option>
+                            <Option value="boolean">Booléen (Boolean)</Option>
+                            <Option value="date">Date</Option>
+                            <Option value="array">Tableau (Array)</Option>
+                        </Select>
+                    </Form.Item>
+                    <Form.Item>
+                        <Space direction="vertical">
+                            <Form.Item name="isRequired" valuePropName="checked" noStyle>
+                                <Switch/>
+                            </Form.Item>
+                            <Text>Est requis pour la création d'un utilisateur</Text>
+                        </Space>
+                    </Form.Item>
+                    <Form.Item>
+                        <Button type="primary" htmlType="submit" block loading={loading}>
+                            Enregistrer les modifications
+                        </Button>
+                    </Form.Item>
+                </Form>
+            </Modal>
         </div>
     );
 };

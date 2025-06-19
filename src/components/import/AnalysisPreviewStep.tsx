@@ -18,7 +18,8 @@ import {
     Tabs,
     Tag,
     Tooltip,
-    Typography
+    Typography,
+    List
 } from 'antd';
 import {
     CheckCircleOutlined,
@@ -29,7 +30,8 @@ import {
     IssuesCloseOutlined,
     PlayCircleOutlined,
     ReloadOutlined,
-    SyncOutlined
+    SyncOutlined,
+    WarningOutlined
 } from '@ant-design/icons';
 import {ImportWizardData} from '../../pages/EnhancedCsvImportPage';
 import {ActionItem, ActionType, ImportConfig} from '../../models/CsvImport';
@@ -350,6 +352,14 @@ const AnalysisPreviewStep: React.FC<AnalysisPreviewStepProps> = ({
         setSelectedActionTypes([]);
     };
 
+    // Après la section des statistiques générales, ajouter une section pour les doublons résolus
+    const duplicateActions = wizardData.analysisResult?.analysis?.actions?.filter(action => 
+        // Ne détecter que les VRAIS doublons d'utilisateurs avec le pattern prénom.nom + chiffre
+        action.actionType === 'CREATE_USER' && 
+        action.objectName && 
+        action.objectName.match(/\.[a-z]+\d+$/) // Pattern: prénom.nom + chiffre (ex: louis.arnaud2)
+    ) || [];
+
     return (
         <Card title="3. Analyse et prévisualisation des données" style={{width: '100%'}}>
             <Space direction="vertical" size={16} style={{width: '100%'}}>
@@ -566,6 +576,53 @@ const AnalysisPreviewStep: React.FC<AnalysisPreviewStepProps> = ({
                                         />
                                     </Space>
                                 </div>
+                            )}
+
+                            {/* Doublons résolus */}
+                            {duplicateActions.length > 0 && (
+                                <Card 
+                                    title={
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <WarningOutlined style={{ color: '#faad14' }} />
+                                            <span>Doublons de noms résolus automatiquement</span>
+                                            <Tag color="orange">{duplicateActions.length}</Tag>
+                                        </div>
+                                    }
+                                    style={{ marginBottom: 16 }}
+                                    size="small"
+                                >
+                                    <div style={{ marginBottom: 12 }}>
+                                        <Text type="secondary">
+                                            Ces utilisateurs avaient des noms identiques. Des suffixes numériques ont été ajoutés automatiquement 
+                                            aux sAMAccountName pour éviter les conflits.
+                                        </Text>
+                                    </div>
+                                    
+                                    <List
+                                        size="small"
+                                        dataSource={duplicateActions}
+                                        renderItem={(action) => (
+                                            <List.Item>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                                                    <div>
+                                                        <Text strong>{action.attributes?.displayName || action.attributes?.cn}</Text>
+                                                    </div>
+                                                    <div style={{ textAlign: 'right' }}>
+                                                        <Tag color="blue">{action.objectName}</Tag>
+                                                    </div>
+                                                </div>
+                                            </List.Item>
+                                        )}
+                                    />
+                                    
+                                    <Alert
+                                        type="info"
+                                        showIcon
+                                        message="Information"
+                                        description="Les doublons ont été résolus automatiquement. Vous pouvez continuer l'importation en toute sécurité."
+                                        style={{ marginTop: 12 }}
+                                    />
+                                </Card>
                             )}
                         </div>
                     )}

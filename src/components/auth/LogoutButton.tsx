@@ -1,5 +1,5 @@
-import React from 'react';
-import { Avatar, Button, Dropdown, Space, type MenuProps } from 'antd';
+import React, { useState } from 'react';
+import { Avatar, Button, Dropdown, Space, type MenuProps, Tooltip } from 'antd';
 import {
     DownOutlined,
     LogoutOutlined,
@@ -9,6 +9,7 @@ import {
 
 import { useAuth } from '../../services/auth/AuthContext';
 import type { UserProfile } from '../../services/auth/authService';
+import AuthStatusIndicator from './AuthStatusIndicator';
 
 /* ---------------------  HELPERS  ---------------------------------- */
 
@@ -31,11 +32,19 @@ function getUserInitials(user: UserProfile | null): string {
 const LogoutButton: React.FC = () => {
     const { authState, logout } = useAuth();
     const { isLoading, user } = authState;
+    const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-    const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
+    const handleMenuClick: MenuProps['onClick'] = async ({ key }) => {
         switch (key) {
             case 'logout':
-                logout();
+                setIsLoggingOut(true);
+                try {
+                    await logout();
+                } catch (error) {
+                    console.error('Erreur lors de la déconnexion:', error);
+                } finally {
+                    setIsLoggingOut(false);
+                }
                 break;
             case 'profile':
                 console.log('Redirection vers le profil');
@@ -111,10 +120,17 @@ const LogoutButton: React.FC = () => {
         { type: 'divider' },
         {
             key: 'logout',
+            disabled: isLoggingOut,
             label: (
                 <Space>
-                    <LogoutOutlined style={{ color: '#ff4d4f' }} />
-                    <span style={{ color: '#ff4d4f' }}>Déconnexion</span>
+                    {isLoggingOut ? (
+                        <AuthStatusIndicator status="loading" size="small" />
+                    ) : (
+                        <LogoutOutlined style={{ color: '#ff4d4f' }} />
+                    )}
+                    <span style={{ color: isLoggingOut ? '#8c8c8c' : '#ff4d4f' }}>
+                        {isLoggingOut ? 'Déconnexion...' : 'Déconnexion'}
+                    </span>
                 </Space>
             )
         }
@@ -126,27 +142,57 @@ const LogoutButton: React.FC = () => {
             trigger={['click']}
             placement="bottomRight"
             arrow
+            disabled={isLoggingOut}
         >
-            <Button
-                type="text"
-                loading={isLoading}
-                style={{
-                    height: 40,
-                    borderRadius: 8,
-                    border: '1px solid #d9d9d9',
-                    background: '#fff',
-                    padding: '0 12px'
-                }}
-                className="user-dropdown-button"
-            >
-                <Space size={8}>
-                    <Avatar size={24} style={{ backgroundColor: '#1890ff', fontWeight: 600 }}>
-                        {getUserInitials(user)}
-                    </Avatar>
-                    <span>{user?.name?.split(' ')[0] || 'Mon compte'}</span>
-                    <DownOutlined style={{ fontSize: 10, color: '#8c8c8c' }} />
-                </Space>
-            </Button>
+            <Tooltip title={isLoggingOut ? "Déconnexion en cours..." : "Menu utilisateur"}>
+                <Button
+                    type="text"
+                    loading={isLoading || isLoggingOut}
+                    disabled={isLoggingOut}
+                    style={{
+                        height: 40,
+                        borderRadius: 8,
+                        border: '1px solid #d9d9d9',
+                        background: '#fff',
+                        padding: '0 12px',
+                        opacity: isLoggingOut ? 0.7 : 1,
+                        transition: 'all 0.3s ease'
+                    }}
+                    className="user-dropdown-button"
+                >
+                    <Space size={8}>
+                        <div style={{ position: 'relative' }}>
+                            <Avatar size={24} style={{ backgroundColor: '#1890ff', fontWeight: 600 }}>
+                                {getUserInitials(user)}
+                            </Avatar>
+                            {isLoggingOut && (
+                                <div style={{
+                                    position: 'absolute',
+                                    top: -2,
+                                    right: -2,
+                                    width: 8,
+                                    height: 8,
+                                    borderRadius: '50%',
+                                    background: '#faad14',
+                                    animation: 'pulse 1s infinite'
+                                }} />
+                            )}
+                        </div>
+                        <span style={{ 
+                            color: isLoggingOut ? '#8c8c8c' : 'inherit',
+                            transition: 'color 0.3s ease'
+                        }}>
+                            {user?.name?.split(' ')[0] || 'Mon compte'}
+                        </span>
+                        <DownOutlined style={{ 
+                            fontSize: 10, 
+                            color: '#8c8c8c',
+                            transform: isLoggingOut ? 'rotate(180deg)' : 'rotate(0deg)',
+                            transition: 'transform 0.3s ease'
+                        }} />
+                    </Space>
+                </Button>
+            </Tooltip>
         </Dropdown>
     );
 };

@@ -215,17 +215,17 @@ class ActiveDirectoryService {
     /**
      * Teste la connectivité avec le contrôleur de domaine
      */
-    async testConnection(): Promise<boolean> {
+    async testConnection(): Promise<{ isHealthy: boolean; details?: any }> {
         try {
             console.log('🌐 [AD Service] Test de connectivité AD');
-            const response = await httpService.get<{ connected: boolean }>(
-                `${API_CONFIG.ENDPOINTS.ACTIVE_DIRECTORY.ROOT}/test`
+            const response = await httpService.get<{ isHealthy: boolean; details: any }>(
+                API_CONFIG.ENDPOINTS.ACTIVE_DIRECTORY.HEALTH
             );
-            console.log('✅ [AD Service] Test de connectivité:', response.data.connected ? 'OK' : 'KO');
-            return response.data.connected;
+            console.log('✅ [AD Service] Test de connectivité:', response.data.isHealthy ? 'OK' : 'KO');
+            return response.data;
         } catch (error) {
             console.error('❌ [AD Service] Erreur test de connectivité:', error);
-            return false;
+            return { isHealthy: false };
         }
     }
 

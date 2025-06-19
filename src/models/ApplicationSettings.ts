@@ -17,7 +17,7 @@ export interface ApiSettings {
 }
 
 /**
- * Interface pour les paramètres LDAP
+ * Interface pour les paramètres LDAP (format frontend - PascalCase)
  */
 export interface LdapSettings {
     LdapServer: string;
@@ -28,7 +28,20 @@ export interface LdapSettings {
     LdapPassword: string;
     LdapSsl: boolean;
     LdapPageSize: number;
-    netBiosDomainName: string;
+}
+
+/**
+ * Interface pour les paramètres LDAP (format API backend - camelCase)
+ */
+export interface LdapSettingsApi {
+    ldapServer: string;
+    ldapDomain: string;
+    ldapPort: number;
+    ldapBaseDn: string;
+    ldapUsername: string;
+    ldapPassword: string;
+    ldapSsl: boolean;
+    ldapPageSize: number;
 }
 
 /**

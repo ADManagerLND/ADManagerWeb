@@ -47,6 +47,113 @@ import ActiveDirectoryPage from './pages/ActiveDirectoryPage';
 
 const {Header, Content, Sider} = Layout;
 
+// ================================================================================================
+// STYLES ET CONSTANTES
+// ================================================================================================
+
+const LOADING_SCREEN_STYLES = {
+    container: {
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)',
+        position: 'relative' as const
+    },
+    decorativeElement1: {
+        position: 'absolute' as const,
+        top: '15%',
+        left: '15%',
+        width: '80px',
+        height: '80px',
+        background: 'rgba(255, 255, 255, 0.08)',
+        borderRadius: '50%',
+        filter: 'blur(30px)',
+        animation: 'float 4s ease-in-out infinite'
+    },
+    decorativeElement2: {
+        position: 'absolute' as const,
+        bottom: '20%',
+        right: '20%',
+        width: '120px',
+        height: '120px',
+        background: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: '50%',
+        filter: 'blur(40px)',
+        animation: 'float 6s ease-in-out infinite reverse'
+    },
+    card: {
+        background: 'white',
+        padding: '48px 40px',
+        borderRadius: '20px',
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+        textAlign: 'center' as const,
+        maxWidth: '420px',
+        minWidth: '380px',
+        position: 'relative' as const,
+        zIndex: 1
+    },
+    logo: {
+        height: '56px',
+        width: 'auto',
+        objectFit: 'contain' as const,
+        marginBottom: '24px'
+    },
+    title: {
+        margin: '0 0 8px 0',
+        color: '#1f2937',
+        fontSize: '20px',
+        fontWeight: '600'
+    },
+    subtitle: {
+        fontSize: '14px',
+        color: '#6b7280',
+        fontWeight: '400'
+    }
+};
+
+const INIT_SCREEN_STYLES = {
+    container: {
+        display: 'flex',
+        flexDirection: 'column' as const,
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)'
+    },
+    card: {
+        background: 'white',
+        padding: '40px',
+        borderRadius: '12px',
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+        textAlign: 'center' as const,
+        maxWidth: '400px'
+    }
+};
+
+const ERROR_SCREEN_STYLES = {
+    container: {
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        padding: '20px',
+        background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)'
+    },
+    card: {
+        background: 'white',
+        padding: '40px',
+        borderRadius: '12px',
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+        maxWidth: '500px',
+        width: '100%'
+    }
+};
+
+// ================================================================================================
+// COMPOSANT PRINCIPAL
+// ================================================================================================
+
 /**
  * Composant principal de l'application avec initialisation asynchrone de MSAL
  */
@@ -82,28 +189,14 @@ const App: React.FC = () => {
         initializeMsal();
     }, []);
 
-    // Affichage pendant l'initialisation
+    // Écran de chargement pendant l'initialisation
     if (isInitializing) {
         return (
-            <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                alignItems: 'center',
-                height: '100vh',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-            }}>
-                <div style={{
-                    background: 'white',
-                    padding: '40px',
-                    borderRadius: '12px',
-                    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-                    textAlign: 'center',
-                    maxWidth: '400px'
-                }}>
+            <div style={INIT_SCREEN_STYLES.container}>
+                <div style={INIT_SCREEN_STYLES.card}>
                     <Spin
                         size="large"
-                        indicator={<LoadingOutlined style={{fontSize: 32, color: '#667eea'}} spin/>}
+                        indicator={<LoadingOutlined style={{fontSize: 32, color: '#1e40af'}} spin/>}
                     />
                     <div style={{marginTop: 24}}>
                         <h3 style={{margin: '0 0 8px 0', color: '#1f2937'}}>AD Manager</h3>
@@ -116,25 +209,11 @@ const App: React.FC = () => {
         );
     }
 
-    // Affichage en cas d'erreur d'initialisation
+    // Écran d'erreur en cas d'échec d'initialisation
     if (initError || !msalInstance) {
         return (
-            <div style={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                height: '100vh',
-                padding: '20px',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-            }}>
-                <div style={{
-                    background: 'white',
-                    padding: '40px',
-                    borderRadius: '12px',
-                    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-                    maxWidth: '500px',
-                    width: '100%'
-                }}>
+            <div style={ERROR_SCREEN_STYLES.container}>
+                <div style={ERROR_SCREEN_STYLES.card}>
                     <Alert
                         message="Erreur d'initialisation"
                         description={
@@ -161,7 +240,7 @@ const App: React.FC = () => {
         );
     }
 
-    // Rendu normal une fois MSAL initialisé
+    // Rendu normal avec MSAL initialisé
     return (
         <MsalProvider instance={msalInstance}>
             <AuthProvider>
@@ -170,6 +249,10 @@ const App: React.FC = () => {
         </MsalProvider>
     );
 };
+
+// ================================================================================================
+// ROUTEUR PRINCIPAL
+// ================================================================================================
 
 /**
  * Routeur principal qui gère la configuration API et l'authentification
@@ -203,7 +286,7 @@ const AppRouter: React.FC = () => {
         checkApiConfiguration();
     }, []);
 
-    // Afficher un spinner pendant la vérification de la configuration API
+    // Écran de chargement pour la vérification de configuration
     if (isCheckingApiConfig) {
         return (
             <div style={{
@@ -221,7 +304,7 @@ const AppRouter: React.FC = () => {
         );
     }
 
-    // Si l'API n'est pas configurée, afficher l'écran de configuration
+    // Écran de configuration API si nécessaire
     if (!isApiConfigured) {
         return (
             <ApiConfigurationSetup 
@@ -234,20 +317,22 @@ const AppRouter: React.FC = () => {
         );
     }
 
-    // Afficher un spinner pendant le chargement de l'état d'authentification
+    // Écran de chargement pour l'authentification
     if (isLoading) {
         return (
-            <div style={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                height: '100vh'
-            }}>
-                <Spin size="large">
-                    <div style={{marginTop: 16, padding: 16}}>
-                        Vérification de l'authentification...
+            <div style={INIT_SCREEN_STYLES.container}>
+                <div style={INIT_SCREEN_STYLES.card}>
+                    <Spin
+                        size="large"
+                        indicator={<LoadingOutlined style={{ fontSize: 32, color: '#1e40af' }} spin />}
+                    />
+                    <div style={{ marginTop: 24 }}>
+                        <h3 style={{ margin: '0 0 8px 0', color: '#1f2937' }}>AD Manager</h3>
+                        <p style={{ margin: 0, color: '#666' }}>
+                            Vérification de l'authentification...
+                        </p>
                     </div>
-                </Spin>
+                </div>
             </div>
         );
     }
@@ -263,6 +348,10 @@ const AppRouter: React.FC = () => {
     return <AppContent/>;
 };
 
+// ================================================================================================
+// CONTENU PRINCIPAL DE L'APPLICATION
+// ================================================================================================
+
 /**
  * Contenu principal de l'application (accessible uniquement si authentifié)
  */
@@ -271,24 +360,37 @@ const AppContent: React.FC = () => {
     const {pathname} = useLocation();
     const [collapsed, setCollapsed] = useState(false);
 
-    // Fonction pour obtenir le titre et l'icône de la page actuelle
+    // Configuration des pages et de leurs icônes
     const getPageInfo = (path: string) => {
-        if (path === '/') return { title: 'Tableau de bord', icon: <DashboardOutlined /> };
-        if (path === '/csv-import') return { title: 'Import CSV/Excel', icon: <UploadOutlined /> };
-        if (path === '/active-directory') return { title: 'Configuration Active Directory', icon: <ApartmentOutlined /> };
-        if (path.startsWith('/settings/api')) return { title: 'Paramètres API', icon: <CloudOutlined /> };
-        if (path.startsWith('/settings/ldap')) return { title: 'Configuration LDAP', icon: <LockOutlined /> };
-        if (path.startsWith('/settings/user-attributes')) return { title: 'Attributs Utilisateur', icon: <IdcardOutlined /> };
-        if (path.startsWith('/settings/teams')) return { title: 'Configuration Teams', icon: <SyncOutlined /> };
-        if (path.startsWith('/settings/imports')) return { title: 'Configurations d\'import', icon: <UploadOutlined /> };
-        if (path.startsWith('/settings')) return { title: 'Configuration', icon: <SettingOutlined /> };
+        const pageMap: Record<string, { title: string; icon: React.ReactElement }> = {
+            '/': { title: 'Tableau de bord', icon: <DashboardOutlined /> },
+            '/csv-import': { title: 'Import CSV/Excel', icon: <UploadOutlined /> },
+            '/active-directory': { title: 'Configuration Active Directory', icon: <ApartmentOutlined /> },
+            '/settings/api': { title: 'Paramètres API', icon: <CloudOutlined /> },
+            '/settings/ldap': { title: 'Configuration LDAP', icon: <LockOutlined /> },
+            '/settings/user-attributes': { title: 'Attributs Utilisateur', icon: <IdcardOutlined /> },
+            '/settings/teams': { title: 'Configuration Teams', icon: <SyncOutlined /> },
+            '/settings/imports': { title: 'Configurations d\'import', icon: <UploadOutlined /> },
+            '/settings': { title: 'Configuration', icon: <SettingOutlined /> }
+        };
+
+        // Recherche exacte d'abord
+        if (pageMap[path]) return pageMap[path];
+
+        // Recherche par préfixe pour les sous-pages
+        for (const [key, value] of Object.entries(pageMap)) {
+            if (path.startsWith(key) && key !== '/') {
+                return value;
+            }
+        }
+
         return { title: 'AD Manager', icon: <SettingOutlined /> };
     };
 
     const currentPageInfo = getPageInfo(pathname);
 
-    // Éléments du menu de navigation réorganisés
-    const items = [
+    // Configuration du menu de navigation
+    const navigationItems = [
         {
             key: '/',
             icon: <DashboardOutlined/>,
@@ -324,7 +426,6 @@ const AppContent: React.FC = () => {
                     icon: <IdcardOutlined/>,
                     label: 'Attributs Utilisateur'
                 },
-
                 {
                     key: '/settings/imports',
                     icon: <UploadOutlined/>,
@@ -400,7 +501,7 @@ const AppContent: React.FC = () => {
                     theme="light"
                     mode="inline"
                     selectedKeys={[pathname]}
-                    items={items}
+                    items={navigationItems}
                     onClick={({key}) => navigate(key)}
                     style={{
                         background: 'transparent',
